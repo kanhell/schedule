@@ -21,18 +21,16 @@ Future<void> showManualAddDialog({
   required ValueChanged<List<ScheduleItem>> onSave,
 }) async {
   TimeOfDay selectedTime = roundToNearestSlot(TimeOfDay.now(), slotMinutes);
-  int duration = slotMinutes * 3;
+  int duration = 30;
   final titleController = TextEditingController();
   Color selectedColor = kUserPaletteColors[0];
   bool showTitleError = false;
   String? overlapError;
   List<String> suggestions = [];
 
-  int minutesToRelativeSlot(int hour, int minute) {
-    final totalMinutes = hour * 60 + minute;
-    final absoluteSlot = totalMinutes ~/ slotMinutes;
-    final startSlot = (dayStartHour * 60) ~/ slotMinutes;
-    return absoluteSlot - startSlot;
+  // 절대 슬롯 (0시 기준) — 타임라인도 절대 슬롯 기준으로 표시
+  int minutesToAbsoluteSlot(int hour, int minute) {
+    return (hour * 60 + minute) ~/ slotMinutes;
   }
 
   List<ScheduleItem> overlapping(int relSlot, int durationSlots) {
@@ -292,7 +290,7 @@ Future<void> showManualAddDialog({
                 ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [slotMinutes, slotMinutes * 3, 60].map((val) {
+                  children: _quickAddValues(slotMinutes).map((val) {
                     return OutlinedButton(
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
@@ -325,11 +323,11 @@ Future<void> showManualAddDialog({
                 }
                 if (duration <= 0) return;
 
-                final relSlot = minutesToRelativeSlot(
+                final absSlot = minutesToAbsoluteSlot(
                     selectedTime.hour, selectedTime.minute);
                 final durationSlots = (duration / slotMinutes).ceil();
 
-                final conflicts = overlapping(relSlot, durationSlots);
+                final conflicts = overlapping(absSlot, durationSlots);
                 if (conflicts.isNotEmpty) {
                   final latestEnd = conflicts
                       .map((s) => s.startSlot + s.durationSlots)
@@ -348,7 +346,7 @@ Future<void> showManualAddDialog({
 
                 AppPersistence.recordTitle(selectedColor, title);
                 final updated = List<ScheduleItem>.from(schedules)
-                  ..add(ScheduleItem(title, relSlot, durationSlots, selectedColor));
+                  ..add(ScheduleItem(title, absSlot, durationSlots, selectedColor));
                 onSave(updated);
                 Navigator.pop(context);
               },
@@ -378,11 +376,8 @@ Future<void> showRuleSetApplyDialog({
   RoutineOption? selectedOption =
       ruleSet.options.isNotEmpty ? ruleSet.options.first : null;
 
-  int minutesToRelativeSlot(int hour, int minute) {
-    final totalMinutes = hour * 60 + minute;
-    final absoluteSlot = totalMinutes ~/ slotMinutes;
-    final startSlot = (dayStartHour * 60) ~/ slotMinutes;
-    return absoluteSlot - startSlot;
+  int minutesToAbsoluteSlot(int hour, int minute) {
+    return (hour * 60 + minute) ~/ slotMinutes;
   }
 
   await showDialog(
@@ -544,7 +539,7 @@ Future<void> showRuleSetApplyDialog({
                       final updated = List<ScheduleItem>.from(schedules)
                         ..removeWhere((s) => s.ruleSetName == ruleSet.name);
 
-                      int relSlot = minutesToRelativeSlot(
+                      int relSlot = minutesToAbsoluteSlot(
                           selectedTime.hour, selectedTime.minute);
                       for (final block in selectedOption!.blocks) {
                         final durationSlots =
@@ -633,4 +628,11 @@ void showItemMenu({
       ),
     ),
   );
+}
+
+/// slotMinutes에 따른 빠른 추가 버튼 값 목록
+List<int> _quickAddValues(int slotMinutes) {
+  if (slotMinutes <= 10) return [10, 30, 60];
+  if (slotMinutes == 15) return [15, 30, 60];
+  return [30, 60, 120]; // 30분 단위
 }

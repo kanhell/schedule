@@ -43,15 +43,13 @@ class AppPersistence {
   // ── TimeSettings ──────────────────────────────────────────────
   static Map<String, dynamic> _timeSettingsToJson(TimeSettings t) => {
         'slotMinutes': t.slotMinutes,
-        'dayStartHour': t.dayStartHour,
-        'dayEndHour': t.dayEndHour,
+        'dayBoundaryHour': t.dayBoundaryHour,
       };
 
   static TimeSettings _timeSettingsFromJson(Map<String, dynamic> j) =>
       TimeSettings(
-        slotMinutes:  j['slotMinutes']  as int,
-        dayStartHour: j['dayStartHour'] as int,
-        dayEndHour:   j['dayEndHour']   as int,
+        slotMinutes:      j['slotMinutes']      as int,
+        dayBoundaryHour: (j['dayBoundaryHour']  as int?) ?? 5,
       );
 
   // ── ScheduleBlock ─────────────────────────────────────────────
@@ -218,12 +216,29 @@ class AppPersistence {
   }
 
   // ── TimeGoal ──────────────────────────────────────────────────
+  static Map<String, dynamic> _subGoalToJson(SubGoal g) => {
+        'id': g.id,
+        'titleKeyword': g.titleKeyword,
+        'type': g.type.name,
+        'targetMinutes': g.targetMinutes,
+        'resetDays': g.resetDays,
+      };
+
+  static SubGoal _subGoalFromJson(Map<String, dynamic> j) => SubGoal(
+        id: j['id'] as String,
+        titleKeyword: j['titleKeyword'] as String,
+        type: GoalType.values.byName(j['type'] as String),
+        targetMinutes: j['targetMinutes'] as int,
+        resetDays: (j['resetDays'] as List).cast<int>(),
+      );
+
   static Map<String, dynamic> _timeGoalToJson(TimeGoal g) => {
         'id': g.id,
         'type': g.type.name,
         'color': _colorToInt(g.color),
         'targetMinutes': g.targetMinutes,
         'resetDays': g.resetDays,
+        'subGoals': g.subGoals.map(_subGoalToJson).toList(),
       };
 
   static TimeGoal _timeGoalFromJson(Map<String, dynamic> j) => TimeGoal(
@@ -232,6 +247,11 @@ class AppPersistence {
         color: _intToColor(j['color'] as int),
         targetMinutes: j['targetMinutes'] as int,
         resetDays: (j['resetDays'] as List).cast<int>(),
+        subGoals: j['subGoals'] != null
+            ? (j['subGoals'] as List)
+                .map((s) => _subGoalFromJson(s as Map<String, dynamic>))
+                .toList()
+            : [],
       );
 
   static Future<void> saveTimeGoals(List<TimeGoal> goals) async {

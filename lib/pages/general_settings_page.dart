@@ -17,8 +17,7 @@ class GeneralSettingsPage extends StatefulWidget {
 
 class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   late int _slotMinutes;
-  late int _dayStartHour;
-  late int _dayEndHour;
+  late int _dayBoundaryHour;
 
   final List<int> _slotOptions = [5, 10, 15, 30];
 
@@ -26,73 +25,15 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   void initState() {
     super.initState();
     _slotMinutes = widget.settings.slotMinutes;
-    _dayStartHour = widget.settings.dayStartHour;
-    _dayEndHour = widget.settings.dayEndHour;
+    _dayBoundaryHour = widget.settings.dayBoundaryHour;
   }
 
   void _saveAndPop() {
-    if (_dayEndHour <= _dayStartHour) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('끝 시간은 시작 시간보다 커야 합니다.')),
-      );
-      return;
-    }
     widget.onChanged(TimeSettings(
       slotMinutes: _slotMinutes,
-      dayStartHour: _dayStartHour,
-      dayEndHour: _dayEndHour,
+      dayBoundaryHour: _dayBoundaryHour,
     ));
     Navigator.pop(context);
-  }
-
-  Widget _buildHourStepper({
-    required String label,
-    required int value,
-    required int min,
-    required int max,
-    required VoidCallback onDecrement,
-    required VoidCallback onIncrement,
-  }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 72,
-          child: Text(label, style: const TextStyle(fontSize: 13)),
-        ),
-        Expanded(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                onPressed: value > min ? onDecrement : null,
-                icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-                color: Colors.blue,
-                disabledColor: Colors.grey.shade300,
-              ),
-              SizedBox(
-                width: 64,
-                child: Center(
-                  child: Text(
-                    '$value시',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
-                    ),
-                  ),
-                ),
-              ),
-              IconButton(
-                onPressed: value < max ? onIncrement : null,
-                icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 28),
-                color: Colors.blue,
-                disabledColor: Colors.grey.shade300,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 
   @override
@@ -124,8 +65,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                             fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 4),
                     const Text('타임라인 한 칸의 시간 간격',
-                        style:
-                            TextStyle(fontSize: 12, color: Colors.grey)),
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
@@ -154,7 +94,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
 
             const SizedBox(height: 12),
 
-            // ── 하루 시작/끝 시간 ──
+            // ── 하루 시작 기준 시각 ──
             Card(
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
@@ -163,44 +103,52 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('표시 시간 범위',
+                    const Text('하루 시작 기준 시각',
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 4),
-                    const Text('타임라인에 표시할 시작 ~ 끝 시간',
-                        style:
-                            TextStyle(fontSize: 12, color: Colors.grey)),
+                    const Text(
+                      '이 시각 이전(새벽)의 일정은 전날의 연속으로 표시됩니다.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
                     const SizedBox(height: 16),
-
-                    // 시작 시간
-                    _buildHourStepper(
-                      label: '시작 시간',
-                      value: _dayStartHour,
-                      min: 0,
-                      max: _dayEndHour - 1,
-                      onDecrement: () => setState(() => _dayStartHour--),
-                      onIncrement: () => setState(() {
-                        _dayStartHour++;
-                        if (_dayEndHour <= _dayStartHour) _dayEndHour = _dayStartHour + 1;
-                      }),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          onPressed: _dayBoundaryHour > 0
+                              ? () => setState(() => _dayBoundaryHour--)
+                              : null,
+                          icon: const Icon(
+                              Icons.keyboard_arrow_down_rounded, size: 28),
+                          color: Colors.blue,
+                          disabledColor: Colors.grey.shade300,
+                        ),
+                        SizedBox(
+                          width: 80,
+                          child: Center(
+                            child: Text(
+                              '오전 $_dayBoundaryHour시',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _dayBoundaryHour < 12
+                              ? () => setState(() => _dayBoundaryHour++)
+                              : null,
+                          icon: const Icon(
+                              Icons.keyboard_arrow_up_rounded, size: 28),
+                          color: Colors.blue,
+                          disabledColor: Colors.grey.shade300,
+                        ),
+                      ],
                     ),
-
-                    const Divider(height: 24),
-
-                    // 끝 시간
-                    _buildHourStepper(
-                      label: '끝 시간',
-                      value: _dayEndHour,
-                      min: _dayStartHour + 1,
-                      max: 24,
-                      onDecrement: () => setState(() {
-                        _dayEndHour--;
-                        if (_dayEndHour <= _dayStartHour) _dayStartHour = _dayEndHour - 1;
-                      }),
-                      onIncrement: () => setState(() => _dayEndHour++),
-                    ),
-
-                    const Divider(height: 16),
+                    const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
@@ -209,18 +157,17 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.access_time,
-                              size: 16, color: Colors.blue),
+                          const Icon(Icons.info_outline,
+                              size: 15, color: Colors.blue),
                           const SizedBox(width: 6),
-                          Text(
-                            '$_dayStartHour:00 ~ $_dayEndHour:00  '
-                            '(${_dayEndHour - _dayStartHour}시간)',
-                            style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.blue,
-                                fontWeight: FontWeight.w500),
+                          Expanded(
+                            child: Text(
+                              '오전 $_dayBoundaryHour시를 기준으로 하루가 나뉩니다.\n'
+                              '자정~오전 $_dayBoundaryHour시 미만은 전날 일정으로 타임라인에 이어 표시됩니다.',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.blue),
+                            ),
                           ),
                         ],
                       ),
@@ -232,7 +179,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
 
             const SizedBox(height: 16),
 
-            // 안내 문구
+            // 안내
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -242,14 +189,13 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.info_outline,
+                  Icon(Icons.warning_amber_rounded,
                       size: 16, color: Colors.orange),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '설정을 변경하면 오늘 추가된 일정이 초기화됩니다.',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.orange),
+                      '최소 시간 단위를 변경하면 오늘 추가된 일정이 초기화됩니다.',
+                      style: TextStyle(fontSize: 12, color: Colors.orange),
                     ),
                   ),
                 ],

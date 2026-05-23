@@ -36,11 +36,16 @@ class _AnalysisPageState extends State<AnalysisPage> {
   late List<TimeGoal> _goals;
   final Set<String> _expandedGoalIds = {};
 
+  // ── 주간 집계 캐시 ──
+  Map<Color, int> _weeklyMinutesByColor = {};
+  bool _weeklyLoaded = false;
+
   @override
   void initState() {
     super.initState();
     _goals = List.from(widget.timeGoals);
     _refreshPeriodCache();
+    _loadWeeklyData();
   }
 
   @override
@@ -49,35 +54,50 @@ class _AnalysisPageState extends State<AnalysisPage> {
     if (oldWidget.timeGoals != widget.timeGoals) {
       _goals = List.from(widget.timeGoals);
     }
-    // 일정이나 목표가 바뀌면 캐시 무효화 후 재계산
     if (oldWidget.schedules != widget.schedules ||
         oldWidget.timeGoals != widget.timeGoals) {
       _periodCache.clear();
       _refreshPeriodCache();
     }
+    if (oldWidget.schedules != widget.schedules) {
+      _loadWeeklyData();
+    }
+  }
+
+  Future<void> _loadWeeklyData() async {
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final byColor = <Color, int>{};
+    for (int i = 6; i >= 0; i--) {
+      final date = todayOnly.subtract(Duration(days: i));
+      final items = await widget.onLoadSchedulesForDate(date);
+      for (final item in items) {
+        final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
+        byColor[item.color] = (byColor[item.color] ?? 0) + minutes;
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _weeklyMinutesByColor = byColor;
+        _weeklyLoaded = true;
+      });
+    }
   }
 
   void _saveGoals() => widget.onTimeGoalsChanged(_goals);
 
-  // ── 목표 기간 계산: 오늘 기준으로 마지막 초기화일 다음날 ~ 오늘 ──
-  // resetDays가 비어있으면 오늘 하루만.
-  // resetDays = [0=월..6=일]
-  DateTimeRange _goalPeriod(TimeGoal goal) {
+  // ── 목표 기간 계산 (TimeGoal 또는 SubGoal 공통) ──
+  DateTimeRange _calcPeriod(List<int> resetDays) {
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
 
-    if (goal.resetDays.isEmpty) {
+    if (resetDays.isEmpty) {
       return DateTimeRange(start: todayOnly, end: todayOnly);
     }
 
-    // 오늘 요일 (0=월..6=일, DateTime.weekday: 1=월..7=일)
-    final todayWeekday = todayOnly.weekday - 1; // 0=월..6=일
+    final todayWeekday = todayOnly.weekday - 1;
+    final sorted = List<int>.from(resetDays)..sort();
 
-    // resetDays를 정렬
-    final sorted = List<int>.from(goal.resetDays)..sort();
-
-    // "가장 최근에 지난 초기화 요일"을 찾는다
-    // = 오늘을 포함해서 과거 방향으로 가장 가까운 resetDay
     int? latestResetWeekday;
     int daysBack = 0;
 
@@ -95,8 +115,6 @@ class _AnalysisPageState extends State<AnalysisPage> {
       return DateTimeRange(start: todayOnly, end: todayOnly);
     }
 
-    // 초기화일 당일은 "이전 주기"이므로 그 다음날부터 시작
-    // 단, 오늘이 초기화 요일이면 오늘 하루만 (daysBack == 0 → start = today)
     final periodStart = daysBack == 0
         ? todayOnly
         : todayOnly.subtract(Duration(days: daysBack - 1));
@@ -104,41 +122,50 @@ class _AnalysisPageState extends State<AnalysisPage> {
     return DateTimeRange(start: periodStart, end: todayOnly);
   }
 
+  DateTimeRange _goalPeriod(TimeGoal goal) => _calcPeriod(goal.resetDays);
+
   // ── 기간 캐시: goalId → (기간, 집계결과) ──
+  // subGoal도 같은 캐시: key = 'goalId:subGoalId'
   final Map<String, ({DateTimeRange range, Map<Color, int> byColor, Map<String, Map<Color, int>> byTitle})>
       _periodCache = {};
 
   Future<void> _refreshPeriodCache() async {
-    for (final goal in _goals) {
-      final range = _goalPeriod(goal);
-      final existing = _periodCache[goal.id];
-      // 기간이 같으면 재로드 불필요 (오늘 날짜가 end이므로 매번 갱신)
-      // 실제론 탭 전환·목표 변경 시 항상 새로 로드
-      if (existing != null &&
-          existing.range.start == range.start &&
-          existing.range.end == range.end) {
-        continue;
+    final allGoals = [..._goals];
+    for (final goal in allGoals) {
+      await _ensureCached(goal.id, goal.resetDays);
+      for (final sub in goal.subGoals) {
+        await _ensureCached('${goal.id}:${sub.id}', sub.resetDays);
       }
-
-      final byColor = <Color, int>{};
-      final byTitle = <String, Map<Color, int>>{};
-
-      DateTime cursor = range.start;
-      while (!cursor.isAfter(range.end)) {
-        final items = await widget.onLoadSchedulesForDate(cursor);
-        for (final item in items) {
-          final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
-          byColor[item.color] = (byColor[item.color] ?? 0) + minutes;
-          byTitle[item.title] ??= {};
-          byTitle[item.title]![item.color] =
-              (byTitle[item.title]![item.color] ?? 0) + minutes;
-        }
-        cursor = cursor.add(const Duration(days: 1));
-      }
-
-      _periodCache[goal.id] = (range: range, byColor: byColor, byTitle: byTitle);
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _ensureCached(String key, List<int> resetDays) async {
+    final range = _calcPeriod(resetDays);
+    final existing = _periodCache[key];
+    if (existing != null &&
+        existing.range.start == range.start &&
+        existing.range.end == range.end) {
+      return;
+    }
+
+    final byColor = <Color, int>{};
+    final byTitle = <String, Map<Color, int>>{};
+
+    DateTime cursor = range.start;
+    while (!cursor.isAfter(range.end)) {
+      final items = await widget.onLoadSchedulesForDate(cursor);
+      for (final item in items) {
+        final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
+        byColor[item.color] = (byColor[item.color] ?? 0) + minutes;
+        byTitle[item.title] ??= {};
+        byTitle[item.title]![item.color] =
+            (byTitle[item.title]![item.color] ?? 0) + minutes;
+      }
+      cursor = cursor.add(const Duration(days: 1));
+    }
+
+    _periodCache[key] = (range: range, byColor: byColor, byTitle: byTitle);
   }
 
   // ── 오늘 하루 색상별 총 시간(분) — 도넛 차트용 ──
@@ -176,8 +203,28 @@ class _AnalysisPageState extends State<AnalysisPage> {
         : actual < goal.targetMinutes;
   }
 
-  // ── 목표 추가/수정 다이얼로그 ──
-  void _showGoalDialog({TimeGoal? editing}) async {
+  bool _isSubGoalAchieved(TimeGoal goal, SubGoal sub) {
+    final actual = _subGoalActualMinutes(goal, sub);
+    return sub.type == GoalType.atLeast
+        ? actual >= sub.targetMinutes
+        : actual < sub.targetMinutes;
+  }
+
+  /// 세부목표 실제 시간: 해당 goal 색상 + titleKeyword 일치하는 일정의 기간 합산
+  int _subGoalActualMinutes(TimeGoal goal, SubGoal sub) {
+    final cacheKey = '${goal.id}:${sub.id}';
+    final byTitle = _periodCache[cacheKey]?.byTitle ?? {};
+    int total = 0;
+    for (final entry in byTitle.entries) {
+      if (entry.key == sub.titleKeyword) {
+        total += entry.value[goal.color] ?? 0;
+      }
+    }
+    return total;
+  }
+
+  // ── 목표 추가/수정 공통 다이얼로그 빌더 ──
+  Future<void> _showGoalDialog({TimeGoal? editing}) async {
     GoalType goalType = editing?.type ?? GoalType.atLeast;
     Color selectedColor = editing?.color ?? kUserPaletteColors[0];
     int targetMinutes = editing?.targetMinutes ?? 60;
@@ -360,6 +407,15 @@ class _AnalysisPageState extends State<AnalysisPage> {
               ),
             ),
             actions: [
+              if (editing != null)
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _deleteGoal(editing.id);
+                  },
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('삭제'),
+                ),
               TextButton(
                   onPressed: () => Navigator.pop(ctx),
                   child: const Text('취소')),
@@ -372,6 +428,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                     color: selectedColor,
                     targetMinutes: targetMinutes,
                     resetDays: resetDays,
+                    subGoals: editing?.subGoals ?? [],
                   );
                   setState(() {
                     if (editing != null) {
@@ -431,6 +488,301 @@ class _AnalysisPageState extends State<AnalysisPage> {
     });
   }
 
+  // ── 세부목표 추가/수정 다이얼로그 ──
+  Future<void> _showSubGoalDialog(TimeGoal goal, {SubGoal? editing}) async {
+    GoalType goalType = editing?.type ?? GoalType.atLeast;
+    int targetMinutes = editing?.targetMinutes ?? 60;
+    List<int> resetDays = List.from(editing?.resetDays ?? []);
+    final titleController = TextEditingController(text: editing?.titleKeyword ?? '');
+    bool showTitleError = false;
+
+    const dayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+
+    // 이 목표 색상에 속하는 기존 일정 이름 목록 (자동완성용)
+    final titleSuggestions = (_goalMinutesByTitle(goal).keys.toList()
+      ..sort());
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(color: goal.color, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Text(editing == null ? '세부목표 추가' : '세부목표 수정',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── 일정 이름 ──
+                  const Text('일정 이름',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: titleController,
+                    decoration: InputDecoration(
+                      hintText: '집계할 일정 이름',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                            color: showTitleError ? Colors.red : Colors.grey),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                            color: showTitleError
+                                ? Colors.red
+                                : Colors.grey.shade300),
+                      ),
+                    ),
+                    onChanged: (_) {
+                      if (showTitleError) setDlgState(() => showTitleError = false);
+                    },
+                  ),
+                  if (showTitleError)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 4),
+                      child: Text('이름을 입력해 주세요.',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.red.shade400)),
+                    ),
+                  if (titleSuggestions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: titleSuggestions.map((t) {
+                        return GestureDetector(
+                          onTap: () {
+                            titleController.text = t;
+                            setDlgState(() => showTitleError = false);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: goal.color.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: goal.color.withValues(alpha: 0.4)),
+                            ),
+                            child: Text(t,
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.black87)),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+
+                  // ── 목표 유형 ──
+                  const Text('목표 유형',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GoalTypeChip(
+                          label: 'n시간 달성',
+                          icon: Icons.check_circle_outline,
+                          selected: goalType == GoalType.atLeast,
+                          color: Colors.green,
+                          onTap: () =>
+                              setDlgState(() => goalType = GoalType.atLeast),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GoalTypeChip(
+                          label: 'n시간 미만',
+                          icon: Icons.do_not_disturb_alt_outlined,
+                          selected: goalType == GoalType.lessThan,
+                          color: Colors.orange,
+                          onTap: () =>
+                              setDlgState(() => goalType = GoalType.lessThan),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+
+                  // ── 목표 시간 ──
+                  const Text('목표 시간',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: targetMinutes > 30
+                            ? () => setDlgState(() => targetMinutes -= 30)
+                            : null,
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: Colors.blue,
+                      ),
+                      SizedBox(
+                        width: 90,
+                        child: Center(
+                          child: Text(
+                            _formatMinutes(targetMinutes),
+                            style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () =>
+                            setDlgState(() => targetMinutes += 30),
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: Colors.blue,
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [30, 60, 90, 120].map((val) {
+                      return OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          shape: const StadiumBorder(),
+                          side: const BorderSide(color: Colors.blue),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () =>
+                            setDlgState(() => targetMinutes = val),
+                        child: Text(_formatMinutes(val),
+                            style: const TextStyle(fontSize: 11)),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // ── 초기화 요일 ──
+                  const Text('초기화 요일',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 4),
+                  Text(
+                    resetDays.isEmpty ? '매일 초기화' : '선택한 요일에 초기화',
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.blueGrey),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    children: List.generate(7, (i) {
+                      final selected = resetDays.contains(i);
+                      return FilterChip(
+                        label: Text(dayLabels[i]),
+                        selected: selected,
+                        selectedColor: Colors.blue.shade100,
+                        checkmarkColor: Colors.blue,
+                        onSelected: (on) {
+                          setDlgState(() {
+                            if (on) {
+                              resetDays.add(i);
+                            } else {
+                              resetDays.remove(i);
+                            }
+                          });
+                        },
+                        labelStyle: TextStyle(
+                          fontSize: 12,
+                          color: selected ? Colors.blue : Colors.black87,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              if (editing != null)
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    final goalIdx = _goals.indexWhere((g) => g.id == goal.id);
+                    if (goalIdx >= 0) {
+                      setState(() {
+                        final updated = _goals[goalIdx].copyWith(
+                          subGoals: _goals[goalIdx]
+                              .subGoals
+                              .where((s) => s.id != editing.id)
+                              .toList(),
+                        );
+                        _goals[goalIdx] = updated;
+                      });
+                      _saveGoals();
+                    }
+                  },
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('삭제'),
+                ),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('취소')),
+              ElevatedButton(
+                onPressed: () {
+                  if (titleController.text.trim().isEmpty) {
+                    setDlgState(() => showTitleError = true);
+                    return;
+                  }
+                  final sub = SubGoal(
+                    id: editing?.id ??
+                        DateTime.now().millisecondsSinceEpoch.toString(),
+                    titleKeyword: titleController.text.trim(),
+                    type: goalType,
+                    targetMinutes: targetMinutes,
+                    resetDays: resetDays,
+                  );
+                  final goalIdx = _goals.indexWhere((g) => g.id == goal.id);
+                  if (goalIdx >= 0) {
+                    List<SubGoal> newSubs;
+                    if (editing != null) {
+                      newSubs = _goals[goalIdx].subGoals.map((s) {
+                        return s.id == editing.id ? sub : s;
+                      }).toList();
+                    } else {
+                      newSubs = [..._goals[goalIdx].subGoals, sub];
+                    }
+                    setState(() {
+                      _goals[goalIdx] =
+                          _goals[goalIdx].copyWith(subGoals: newSubs);
+                    });
+                    _periodCache.remove('${goal.id}:${sub.id}');
+                    _ensureCached('${goal.id}:${sub.id}', sub.resetDays)
+                        .then((_) { if (mounted) setState(() {}); });
+                    _saveGoals();
+                  }
+                  Navigator.pop(ctx);
+                },
+                child: const Text('저장'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    titleController.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final minutesByColor = _calcMinutesByColor();
@@ -481,7 +833,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
               padding: const EdgeInsets.all(16),
               children: [
                 if (widget.schedules.isNotEmpty) ...[
-                  _buildDonutCard(donutEntries, usedEntries, totalMinutes, dayTotalMinutes, unallocatedMinutes),
+                  _buildDonutPageView(donutEntries, usedEntries, totalMinutes, dayTotalMinutes, unallocatedMinutes),
                   const SizedBox(height: 16),
                 ],
                 _buildGoalsCard(),
@@ -516,13 +868,192 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  Widget _buildDonutCard(
+  // ── 오늘 + 일주일 도넛을 좌우 스와이프로 보여주는 PageView ──
+  Widget _buildDonutPageView(
     List<ColorStat> donutEntries,
     List<ColorStat> usedEntries,
     int totalMinutes,
     int dayTotalMinutes,
     int unallocatedMinutes,
   ) {
+    // 주간 도넛 데이터 계산
+    final weeklyTotal = _weeklyMinutesByColor.values.fold(0, (a, b) => a + b);
+    final weeklyUsedEntries = widget.colorLabels
+        .map((label) {
+          final minutes = _weeklyMinutesByColor[label.color] ?? 0;
+          return ColorStat(
+            label: label,
+            minutes: minutes,
+            ratio: weeklyTotal > 0 ? minutes / weeklyTotal : 0,
+          );
+        })
+        .where((e) => e.minutes > 0)
+        .toList()
+      ..sort((a, b) => b.minutes.compareTo(a.minutes));
+
+    final pageController = PageController();
+    final pageNotifier = ValueNotifier<int>(0);
+
+    return StatefulBuilder(
+      builder: (context, setPageState) {
+        return Column(
+          children: [
+            SizedBox(
+              height: 420,
+              child: PageView(
+                controller: pageController,
+                onPageChanged: (i) => pageNotifier.value = i,
+                children: [
+                  _buildDonutCard(donutEntries, usedEntries, totalMinutes,
+                      dayTotalMinutes, unallocatedMinutes, title: '오늘 시간 분포'),
+                  _buildWeeklyDonutCard(weeklyUsedEntries, weeklyTotal),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<int>(
+              valueListenable: pageNotifier,
+              builder: (_, page, _) => Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(2, (i) => Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: page == i ? 16 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: page == i ? Colors.blue : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                )),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ── 일주일 도넛 카드 ──
+  Widget _buildWeeklyDonutCard(List<ColorStat> usedEntries, int totalMinutes) {
+    if (!_weeklyLoaded) {
+      return Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: Colors.white,
+        child: const SizedBox(
+          height: 300,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final weekStart = todayOnly.subtract(const Duration(days: 6));
+    final dateLabel =
+        '${weekStart.month}/${weekStart.day} ~ ${todayOnly.month}/${todayOnly.day}';
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            const Text('일주일 시간 분포',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            Text(dateLabel,
+                style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: 200,
+              height: 200,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  CustomPaint(
+                    size: const Size(200, 200),
+                    painter: DonutPainter(usedEntries),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _formatMinutes(totalMinutes),
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87),
+                      ),
+                      const Text('7일 합계',
+                          style:
+                              TextStyle(fontSize: 11, color: Colors.grey)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (usedEntries.isEmpty)
+              Text('이번 주 데이터가 없습니다.',
+                  style: TextStyle(
+                      fontSize: 13, color: Colors.grey.shade400))
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: usedEntries.map((e) {
+                  final pct = totalMinutes > 0
+                      ? (e.minutes / totalMinutes * 100).round()
+                      : 0;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: e.label.color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(e.label.name,
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.black87)),
+                        ),
+                        Text(_formatMinutes(e.minutes),
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w500)),
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: 36,
+                          child: Text('($pct%)',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade400),
+                              textAlign: TextAlign.right),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDonutCard(
+    List<ColorStat> donutEntries,
+    List<ColorStat> usedEntries,
+    int totalMinutes,
+    int dayTotalMinutes,
+    int unallocatedMinutes, {
+    String title = '오늘 시간 분포',
+  }) {
     // 인덱스: 미할당 맨 위, 그 아래 색상 항목 (시간 많은 순)
     final legendEntries = [
       if (unallocatedMinutes > 0)
@@ -542,8 +1073,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            const Text('오늘 시간 분포',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            Text(title,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 20),
             SizedBox(
               width: 200,
@@ -698,17 +1229,12 @@ class _AnalysisPageState extends State<AnalysisPage> {
         : goal.resetDays.map((d) => dayLabels[d]).join('·');
 
     final labelName = _labelName(goal.color);
-    final periodLabel = _periodLabel(goal);
-
-    // 이름별 시간 집계 (내림차순 정렬)
-    final titleMinutes = _goalMinutesByTitle(goal).entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: GestureDetector(
-        onTap: () => _showGoalDialog(editing: goal),
-        onLongPress: () => _showDeleteConfirm(goal),
+        onTap: () => _toggleGoalExpanded(goal.id),
+        onLongPress: () => _showGoalDialog(editing: goal),
         child: Container(
           decoration: BoxDecoration(
             color: achieved
@@ -805,160 +1331,88 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       Text(resetLabel,
                           style: TextStyle(
                               fontSize: 11, color: Colors.grey.shade400)),
-                      if (periodLabel.isNotEmpty) ...[
-                        const SizedBox(width: 4),
-                        Text('($periodLabel)',
-                            style: TextStyle(
-                                fontSize: 10, color: Colors.grey.shade400)),
-                      ],
-                      // ── 토글 버튼 ──
-                      if (titleMinutes.isNotEmpty) ...[
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          onTap: () {
-                            _toggleGoalExpanded(goal.id);
-                          },
-                          behavior: HitTestBehavior.opaque,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: isExpanded
-                                  ? goal.color.withValues(alpha: 0.18)
-                                  : Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '내역',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: isExpanded
-                                        ? goal.color
-                                        : Colors.grey.shade600,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                Icon(
-                                  isExpanded
-                                      ? Icons.keyboard_arrow_up_rounded
-                                      : Icons.keyboard_arrow_down_rounded,
-                                  size: 14,
-                                  color: isExpanded
-                                      ? goal.color
-                                      : Colors.grey.shade500,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
+                      // ── 펼치기 힌트 ──
+                      const SizedBox(width: 6),
+                      Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 16,
+                        color: Colors.grey.shade400,
+                      ),
                     ],
                   ),
                 ],
               ),
 
-              // ── 펼쳐지는 이름별 내역 ──
+              // ── 펼쳐지는 세부목표 영역 ──
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeInOut,
-                child: isExpanded && titleMinutes.isNotEmpty
+                child: isExpanded
                     ? Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: goal.color.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: goal.color.withValues(alpha: 0.2),
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Divider(height: 1),
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '세부목표',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => _showSubGoalDialog(goal),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: goal.color.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                          color: goal.color.withValues(alpha: 0.4)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.add,
+                                            size: 12, color: goal.color),
+                                        const SizedBox(width: 3),
+                                        Text('추가',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                color: goal.color,
+                                                fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '일정별 내역',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade500,
-                                  fontWeight: FontWeight.w600,
+                            if (goal.subGoals.isEmpty) ...[
+                              const SizedBox(height: 10),
+                              Center(
+                                child: Text(
+                                  '+ 추가 버튼으로 세부목표를 설정해보세요.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade400),
                                 ),
                               ),
+                              const SizedBox(height: 4),
+                            ] else ...[
                               const SizedBox(height: 8),
-                              ...titleMinutes.map((entry) {
-                                final ratio = actual > 0
-                                    ? entry.value / actual
-                                    : 0.0;
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 7),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Flexible(
-                                                  child: Text(
-                                                    entry.key,
-                                                    style: const TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                      color: Colors.black87,
-                                                    ),
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  _formatMinutes(entry.value),
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: goal.color
-                                                        .withValues(alpha: 0.85),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 3),
-                                            ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(3),
-                                              child: LinearProgressIndicator(
-                                                value: ratio,
-                                                minHeight: 4,
-                                                backgroundColor:
-                                                    Colors.grey.shade200,
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                        Color>(
-                                                  goal.color.withValues(
-                                                      alpha: 0.6),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
+                              ...goal.subGoals.map((sub) =>
+                                  _buildSubGoalRow(goal, sub)),
                             ],
-                          ),
+                          ],
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -970,30 +1424,125 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
+  Widget _buildSubGoalRow(TimeGoal goal, SubGoal sub) {
+    final actual = _subGoalActualMinutes(goal, sub);
+    final achieved = _isSubGoalAchieved(goal, sub);
+    final isAtLeast = sub.type == GoalType.atLeast;
+    final progress = (actual / sub.targetMinutes).clamp(0.0, 1.0);
+    final typeColor = isAtLeast ? Colors.green : Colors.orange;
+
+    const dayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+    final resetLabel = sub.resetDays.isEmpty
+        ? '매일'
+        : sub.resetDays.map((d) => dayLabels[d]).join('·');
+
+    return GestureDetector(
+      onTap: () => _showSubGoalDialog(goal, editing: sub),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: achieved
+              ? typeColor.withValues(alpha: 0.06)
+              : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: achieved
+                ? typeColor.withValues(alpha: 0.25)
+                : Colors.grey.shade200,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: goal.color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    sub.titleKeyword,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: typeColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    isAtLeast ? '달성' : '미만',
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: typeColor,
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  achieved ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: 14,
+                  color: achieved ? typeColor : Colors.grey.shade300,
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: isAtLeast
+                    ? progress
+                    : (1.0 - progress).clamp(0.0, 1.0),
+                minHeight: 5,
+                backgroundColor: Colors.grey.shade100,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  achieved ? typeColor : typeColor.withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  isAtLeast
+                      ? '${_formatMinutes(actual)} / ${_formatMinutes(sub.targetMinutes)}'
+                      : '현재 ${_formatMinutes(actual)}  목표 ${_formatMinutes(sub.targetMinutes)} 미만',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: achieved ? typeColor : Colors.black54,
+                      fontWeight: FontWeight.w500),
+                ),
+                Row(
+                  children: [
+                    Icon(Icons.refresh, size: 10, color: Colors.grey.shade400),
+                    const SizedBox(width: 2),
+                    Text(resetLabel,
+                        style: TextStyle(
+                            fontSize: 10, color: Colors.grey.shade400)),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _deleteGoal(String id) {
     setState(() => _goals.removeWhere((g) => g.id == id));
     _saveGoals();
-  }
-
-  void _showDeleteConfirm(TimeGoal goal) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('목표 삭제'),
-        content: const Text('이 목표를 삭제할까요?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              _deleteGoal(goal.id);
-              Navigator.pop(ctx);
-            },
-            child: const Text('삭제', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
   }
 }

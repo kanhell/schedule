@@ -7,11 +7,13 @@ class DayScheduleSettingsPage extends StatefulWidget {
   final List<String> dayNames;
   final List<List<ScheduleItem>> daySchedules;
   final ValueChanged<List<List<ScheduleItem>>> onChanged;
+  final int slotMinutes;
   const DayScheduleSettingsPage(
       {super.key,
       required this.dayNames,
       required this.daySchedules,
-      required this.onChanged});
+      required this.onChanged,
+      this.slotMinutes = 10});
  
   @override
   State<DayScheduleSettingsPage> createState() =>
@@ -35,7 +37,8 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
   }
  
   void _addItem() async {
-    TimeOfDay selectedTime = roundToNearest10(TimeOfDay.now());
+    final sm = widget.slotMinutes;
+    TimeOfDay selectedTime = roundToNearestSlot(TimeOfDay.now(), sm);
     int duration = 30;
     final titleController = TextEditingController();
     Color selectedColor = kUserPaletteColors[0];
@@ -45,10 +48,10 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final startSlot = (selectedTime.hour * 6) + (selectedTime.minute ~/ 10);
-          final endSlot = startSlot + (duration / 10).ceil();
-          final endHour = endSlot ~/ 6;
-          final endMin = (endSlot % 6) * 10;
+          final startSlot = (selectedTime.hour * 60 + selectedTime.minute) ~/ sm;
+          final endSlot = startSlot + (duration / sm).ceil();
+          final endHour = (endSlot * sm) ~/ 60;
+          final endMin = (endSlot * sm) % 60;
 
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -127,7 +130,7 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                           final t = await showTimePicker(
                               context: ctx, initialTime: selectedTime);
                           if (t != null) {
-                            setDialogState(() => selectedTime = roundToNearest10(t));
+                            setDialogState(() => selectedTime = roundToNearestSlot(t, sm));
                           }
                         },
                         child: Text(
@@ -149,7 +152,7 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                     children: [
                       IconButton(
                         onPressed: () {
-                          if (duration > 10) setDialogState(() => duration -= 10);
+                          if (duration > sm) setDialogState(() => duration -= sm);
                         },
                         icon: const Icon(Icons.remove_circle_outline),
                       ),
@@ -164,14 +167,14 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                         ),
                       ),
                       IconButton(
-                        onPressed: () => setDialogState(() => duration += 10),
+                        onPressed: () => setDialogState(() => duration += sm),
                         icon: const Icon(Icons.add_circle_outline),
                       ),
                     ],
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [10, 30, 60].map((val) {
+                    children: _quickAddValues(sm).map((val) {
                       return OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           padding:
@@ -209,8 +212,8 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
     final title = titleController.text.trim();
     if (title.isNotEmpty && duration > 0) {
       setState(() {
-        final startSlot = (selectedTime.hour * 6) + (selectedTime.minute ~/ 10);
-        final durationSlots = (duration / 10).ceil();
+        final startSlot = (selectedTime.hour * 60 + selectedTime.minute) ~/ sm;
+        final durationSlots = (duration / sm).ceil();
         _schedules[_selectedDay]
             .add(ScheduleItem(title, startSlot, durationSlots, selectedColor));
       });
@@ -331,4 +334,10 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
       ),
     );
   }
+}
+/// slotMinutes에 따른 빠른 추가 버튼 값 목록
+List<int> _quickAddValues(int slotMinutes) {
+  if (slotMinutes <= 10) return [10, 30, 60];
+  if (slotMinutes == 15) return [15, 30, 60];
+  return [30, 60, 120]; // 30분 단위
 }

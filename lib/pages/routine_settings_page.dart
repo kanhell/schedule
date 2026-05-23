@@ -6,8 +6,9 @@ import '../widgets/mini_timeline.dart';
 class ConditionalRuleSettingsPage extends StatefulWidget {
   final List<ConditionalRuleSet> ruleSets;
   final ValueChanged<List<ConditionalRuleSet>> onChanged;
+  final int slotMinutes;
   const ConditionalRuleSettingsPage(
-      {super.key, required this.ruleSets, required this.onChanged});
+      {super.key, required this.ruleSets, required this.onChanged, this.slotMinutes = 10});
 
   @override
   State<ConditionalRuleSettingsPage> createState() =>
@@ -51,11 +52,12 @@ class _ConditionalRuleSettingsPageState
 
   // 미리보기: 시작시간 없으므로 0시 기준으로 상대 슬롯
   List<ScheduleItem> _previewItems(int setIdx, RoutineOption option) {
+    final sm = widget.slotMinutes;
     final color = _colorForSet(setIdx);
     int startSlot = 0;
     final items = <ScheduleItem>[];
     for (final block in option.blocks) {
-      final dSlots = (block.durationMinutes / 10).ceil();
+      final dSlots = (block.durationMinutes / sm).ceil();
       items.add(ScheduleItem(block.title, startSlot, dSlots, color));
       startSlot += dSlots;
     }
@@ -216,6 +218,7 @@ class _ConditionalRuleSettingsPageState
         text: existing?.blocks.isNotEmpty == true
             ? existing!.blocks.first.title
             : '');
+    final sm = widget.slotMinutes;
     int blockDuration = existing?.blocks.isNotEmpty == true
         ? existing!.blocks.first.durationMinutes
         : 60;
@@ -226,7 +229,7 @@ class _ConditionalRuleSettingsPageState
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final dSlots = (blockDuration / 10).ceil();
+          final dSlots = (blockDuration / sm).ceil();
           final previewItem = ScheduleItem(
             blockTitleController.text.isEmpty ? '(미리보기)' : blockTitleController.text,
             0,
@@ -277,8 +280,8 @@ class _ConditionalRuleSettingsPageState
                     children: [
                       IconButton(
                         onPressed: () {
-                          if (blockDuration > 10)
-                            setDialogState(() => blockDuration -= 10);
+                          if (blockDuration > sm)
+                            setDialogState(() => blockDuration -= sm);
                         },
                         icon: const Icon(Icons.remove_circle_outline),
                       ),
@@ -290,18 +293,18 @@ class _ConditionalRuleSettingsPageState
                           divisions: 17,
                           label: '$blockDuration분',
                           onChanged: (v) =>
-                              setDialogState(() => blockDuration = (v ~/ 10) * 10),
+                              setDialogState(() => blockDuration = (v ~/ sm) * sm),
                         ),
                       ),
                       IconButton(
-                        onPressed: () => setDialogState(() => blockDuration += 10),
+                        onPressed: () => setDialogState(() => blockDuration += sm),
                         icon: const Icon(Icons.add_circle_outline),
                       ),
                     ],
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [10, 30, 60].map((val) {
+                    children: _quickAddValues(sm).map((val) {
                       return OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -494,4 +497,10 @@ class _ConditionalRuleSettingsPageState
       ),
     );
   }
+}
+/// slotMinutes에 따른 빠른 추가 버튼 값 목록
+List<int> _quickAddValues(int slotMinutes) {
+  if (slotMinutes <= 10) return [10, 30, 60];
+  if (slotMinutes == 15) return [15, 30, 60];
+  return [30, 60, 120]; // 30분 단위
 }

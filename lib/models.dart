@@ -45,24 +45,31 @@ class ColorLabel {
 
 class TimeSettings {
   final int slotMinutes;
-  final int dayStartHour;
-  final int dayEndHour;
+  /// 하루 경계 시간 (기본 오전 5시).
+  /// 이 시각 이전의 슬롯은 "전날의 연속"으로 간주해 타임라인을 이어 표시.
+  final int dayBoundaryHour;
 
   const TimeSettings({
     this.slotMinutes = 10,
-    this.dayStartHour = 0,
-    this.dayEndHour = 24,
+    this.dayBoundaryHour = 5,
+    // 하위 호환용 — 무시됨
+    int dayStartHour = 0,
+    int dayEndHour   = 24,
   });
 
-  int get totalSlots => ((dayEndHour - dayStartHour) * 60) ~/ slotMinutes;
-  int get startSlotOffset => (dayStartHour * 60) ~/ slotMinutes;
+  /// 하루 전체 슬롯 수 (0시~24시 기준 절대 슬롯)
   int get totalSlotsInDay => (24 * 60) ~/ slotMinutes;
 
-  TimeSettings copyWith({int? slotMinutes, int? dayStartHour, int? dayEndHour}) {
+  // ── 하위 호환 getter ──
+  int get dayStartHour => 0;
+  int get dayEndHour   => 24;
+  int get totalSlots   => totalSlotsInDay;
+  int get startSlotOffset => 0;
+
+  TimeSettings copyWith({int? slotMinutes, int? dayBoundaryHour}) {
     return TimeSettings(
       slotMinutes: slotMinutes ?? this.slotMinutes,
-      dayStartHour: dayStartHour ?? this.dayStartHour,
-      dayEndHour: dayEndHour ?? this.dayEndHour,
+      dayBoundaryHour: dayBoundaryHour ?? this.dayBoundaryHour,
     );
   }
 }
