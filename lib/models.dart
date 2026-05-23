@@ -11,19 +11,22 @@ class ScheduleItem {
       {this.ruleSetName});
 }
 
-class ConditionalRule {
+// 옵션(구 조건): 이름 + 소요시간만 (시작시간 없음)
+class RoutineOption {
   String name;
-  TimeOfDay time;
   List<ScheduleBlock> blocks;
-  ConditionalRule({required this.name, required this.time, required this.blocks});
+  RoutineOption({required this.name, required this.blocks});
 }
 
 class ConditionalRuleSet {
   String name;
-  List<ConditionalRule> rules;
-  Color? color; // 사용자 지정 색상 (null이면 인덱스 기본색 사용)
-  ConditionalRuleSet({required this.name, required this.rules, this.color});
+  List<RoutineOption> options;
+  Color? color;
+  ConditionalRuleSet({required this.name, required this.options, this.color});
 }
+
+// 하위호환용 alias (routine_settings_page 내부에서만 씀)
+typedef ConditionalRule = RoutineOption;
 
 class ScheduleBlock {
   String title;
@@ -32,9 +35,9 @@ class ScheduleBlock {
 }
 
 class TimeSettings {
-  final int slotMinutes;  // 최소 시간 단위 (5, 10, 15, 30)
-  final int dayStartHour; // 하루 시작 시간 (0~23)
-  final int dayEndHour;   // 하루 끝 시간 (1~24)
+  final int slotMinutes;
+  final int dayStartHour;
+  final int dayEndHour;
 
   const TimeSettings({
     this.slotMinutes = 10,
@@ -44,7 +47,6 @@ class TimeSettings {
 
   int get totalSlots => ((dayEndHour - dayStartHour) * 60) ~/ slotMinutes;
   int get startSlotOffset => (dayStartHour * 60) ~/ slotMinutes;
-  // 하루 전체 슬롯 수 (offset 포함)
   int get totalSlotsInDay => (24 * 60) ~/ slotMinutes;
 
   TimeSettings copyWith({int? slotMinutes, int? dayStartHour, int? dayEndHour}) {
