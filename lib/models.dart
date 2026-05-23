@@ -25,13 +25,22 @@ class ConditionalRuleSet {
   ConditionalRuleSet({required this.name, required this.options, this.color});
 }
 
-// 하위호환용 alias (routine_settings_page 내부에서만 씀)
+// 하위호환용 alias
 typedef ConditionalRule = RoutineOption;
 
 class ScheduleBlock {
   String title;
   int durationMinutes;
   ScheduleBlock({required this.title, required this.durationMinutes});
+}
+
+/// 색상 팔레트 6색 각각에 사용자가 붙이는 이름
+class ColorLabel {
+  final Color color;
+  final String name;
+  const ColorLabel({required this.color, required this.name});
+  ColorLabel copyWith({Color? color, String? name}) =>
+      ColorLabel(color: color ?? this.color, name: name ?? this.name);
 }
 
 class TimeSettings {

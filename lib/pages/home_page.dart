@@ -38,10 +38,17 @@ class _ScheduleAppState extends State<ScheduleApp> {
   final List<String> _dayNames = ['월', '화', '수', '목', '금', '토', '일'];
   late List<List<ScheduleItem>> _daySchedules;
 
+  // 색상별 이름 (팔레트 6색 고정)
+  late List<ColorLabel> colorLabels;
+
   @override
   void initState() {
     super.initState();
     _daySchedules = List.generate(7, (_) => []);
+    colorLabels = List.generate(
+      kUserPaletteColors.length,
+      (i) => ColorLabel(color: kUserPaletteColors[i], name: kUserPaletteLabels[i]),
+    );
   }
 
   @override
@@ -58,7 +65,12 @@ class _ScheduleAppState extends State<ScheduleApp> {
         onRuleSetsChanged: (r) => setState(() => conditionalRuleSets = r),
         onDaySchedulesChanged: (d) => setState(() => _daySchedules = d),
       ),
-      const AnalysisPage(),
+      AnalysisPage(
+        schedules: schedules,
+        timeSettings: timeSettings,
+        colorLabels: colorLabels,
+        onColorLabelsChanged: (updated) => setState(() => colorLabels = updated),
+      ),
     ];
 
     return Scaffold(
