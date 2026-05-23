@@ -38,7 +38,9 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
     TimeOfDay selectedTime = roundToNearest10(TimeOfDay.now());
     int duration = 30;
     final titleController = TextEditingController();
- 
+    Color selectedColor = kUserPaletteColors[0];
+    bool showTitleError = false;
+
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -47,22 +49,75 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
           final endSlot = startSlot + (duration / 10).ceil();
           final endHour = endSlot ~/ 6;
           final endMin = (endSlot % 6) * 10;
- 
+
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             title: Text('${widget.dayNames[_selectedDay]}요일 일정 추가'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextField(
                     controller: titleController,
-                    decoration: const InputDecoration(hintText: '일정 내용'),
+                    decoration: InputDecoration(
+                      hintText: '일정 내용',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: showTitleError ? Colors.red : Colors.grey,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: showTitleError ? Colors.red : Colors.grey.shade300,
+                        ),
+                      ),
+                    ),
                     maxLines: null,
                     keyboardType: TextInputType.multiline,
                     textInputAction: TextInputAction.newline,
+                    onChanged: (_) {
+                      if (showTitleError) setDialogState(() => showTitleError = false);
+                    },
                   ),
-                  const SizedBox(height: 16),
+                  if (showTitleError)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 4),
+                      child: Text(
+                        '제목을 입력해 주세요.',
+                        style: TextStyle(fontSize: 11, color: Colors.red.shade400),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  const Text('색상', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: List.generate(kUserPaletteColors.length, (ci) {
+                      final c = kUserPaletteColors[ci];
+                      final isSelected = selectedColor == c;
+                      return GestureDetector(
+                        onTap: () => setDialogState(() => selectedColor = c),
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: isSelected
+                                ? Border.all(color: Colors.black54, width: 2.5)
+                                : Border.all(color: Colors.transparent, width: 2.5),
+                          ),
+                          child: isSelected
+                              ? const Icon(Icons.check, size: 14, color: Colors.black54)
+                              : null,
+                        ),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 14),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -137,8 +192,11 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                   onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
               ElevatedButton(
                 onPressed: () {
-                  if (titleController.text.trim().isNotEmpty && duration > 0)
-                    Navigator.pop(ctx);
+                  if (titleController.text.trim().isEmpty) {
+                    setDialogState(() => showTitleError = true);
+                    return;
+                  }
+                  if (duration > 0) Navigator.pop(ctx);
                 },
                 child: const Text('저장'),
               ),
@@ -147,14 +205,14 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
         },
       ),
     );
- 
+
     final title = titleController.text.trim();
     if (title.isNotEmpty && duration > 0) {
       setState(() {
         final startSlot = (selectedTime.hour * 6) + (selectedTime.minute ~/ 10);
         final durationSlots = (duration / 10).ceil();
         _schedules[_selectedDay]
-            .add(ScheduleItem(title, startSlot, durationSlots, Colors.teal.shade100));
+            .add(ScheduleItem(title, startSlot, durationSlots, selectedColor));
       });
     }
   }
@@ -274,4 +332,3 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
     );
   }
 }
- 

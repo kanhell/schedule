@@ -45,8 +45,13 @@ class _ConditionalRuleSettingsPageState
     Navigator.pop(context);
   }
 
+  Color _colorForSet(int setIdx) {
+    final customColor = _ruleSets[setIdx].color;
+    return customColor ?? ruleSetColor(setIdx);
+  }
+
   List<ScheduleItem> _previewItems(int setIdx, ConditionalRule rule) {
-    final color = ruleSetColor(setIdx);
+    final color = _colorForSet(setIdx);
     int startSlot = (rule.time.hour * 6) + (rule.time.minute ~/ 10);
     final items = <ScheduleItem>[];
     for (final block in rule.blocks) {
@@ -59,55 +64,135 @@ class _ConditionalRuleSettingsPageState
 
   void _editRuleSetName(int setIdx) async {
     final controller = TextEditingController(text: _ruleSets[setIdx].name);
+    Color selectedColor = _colorForSet(setIdx);
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: const Text('루틴 이름 수정'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '루틴 이름'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          title: const Text('루틴 수정'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(hintText: '루틴 이름'),
+              ),
+              const SizedBox(height: 16),
+              const Text('색상', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 8),
+              Row(
+                children: List.generate(kUserPaletteColors.length, (ci) {
+                  final c = kUserPaletteColors[ci];
+                  final isSelected = selectedColor == c;
+                  return GestureDetector(
+                    onTap: () => setDialogState(() => selectedColor = c),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: isSelected
+                            ? Border.all(color: Colors.black54, width: 2.5)
+                            : Border.all(color: Colors.transparent, width: 2.5),
+                      ),
+                      child: isSelected
+                          ? const Icon(Icons.check, size: 14, color: Colors.black54)
+                          : null,
+                    ),
+                  );
+                }),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('저장'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('저장')),
-        ],
       ),
     );
     final newName = controller.text.trim();
     if (newName.isNotEmpty) {
       setState(() {
-        _ruleSets[setIdx] =
-            ConditionalRuleSet(name: newName, rules: _ruleSets[setIdx].rules);
+        _ruleSets[setIdx] = ConditionalRuleSet(
+          name: newName,
+          rules: _ruleSets[setIdx].rules,
+          color: selectedColor,
+        );
       });
     }
   }
 
   void _addRuleSet() async {
     String name = '';
+    Color selectedColor = kUserPaletteColors[0];
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('루틴 이름'),
-        content: TextField(
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '예: 저녁 루틴'),
-          onChanged: (v) => name = v,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
-          ElevatedButton(
-            onPressed: () {
-              if (name.isNotEmpty) Navigator.pop(ctx);
-            },
-            child: const Text('추가'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('루틴 추가'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                autofocus: true,
+                decoration: const InputDecoration(hintText: '예: 저녁 루틴'),
+                onChanged: (v) => name = v,
+              ),
+              const SizedBox(height: 16),
+              const Text('색상', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 8),
+              Row(
+                children: List.generate(kUserPaletteColors.length, (ci) {
+                  final c = kUserPaletteColors[ci];
+                  final isSelected = selectedColor == c;
+                  return GestureDetector(
+                    onTap: () => setDialogState(() => selectedColor = c),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: isSelected
+                            ? Border.all(color: Colors.black54, width: 2.5)
+                            : Border.all(color: Colors.transparent, width: 2.5),
+                      ),
+                      child: isSelected
+                          ? const Icon(Icons.check, size: 14, color: Colors.black54)
+                          : null,
+                    ),
+                  );
+                }),
+              ),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+            ElevatedButton(
+              onPressed: () {
+                if (name.isNotEmpty) Navigator.pop(ctx);
+              },
+              child: const Text('추가'),
+            ),
+          ],
+        ),
       ),
     );
     if (name.isNotEmpty) {
-      setState(() => _ruleSets.add(ConditionalRuleSet(name: name, rules: [])));
+      setState(() => _ruleSets.add(
+            ConditionalRuleSet(name: name, rules: [], color: selectedColor),
+          ));
     }
   }
 
@@ -123,7 +208,7 @@ class _ConditionalRuleSettingsPageState
         ? existing!.blocks.first.durationMinutes
         : 60;
 
-    final previewColor = ruleSetColor(setIdx);
+    final previewColor = _colorForSet(setIdx);
 
     await showDialog(
       context: context,
@@ -301,7 +386,7 @@ class _ConditionalRuleSettingsPageState
                 itemCount: _ruleSets.length,
                 itemBuilder: (ctx, setIdx) {
                   final ruleSet = _ruleSets[setIdx];
-                  final setColor = ruleSetColor(setIdx);
+                  final setColor = _colorForSet(setIdx);
                   return Card(
                     margin: const EdgeInsets.all(12),
                     child: Column(

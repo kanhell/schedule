@@ -45,6 +45,56 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     Navigator.pop(context);
   }
 
+  Widget _buildHourStepper({
+    required String label,
+    required int value,
+    required int min,
+    required int max,
+    required VoidCallback onDecrement,
+    required VoidCallback onIncrement,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 72,
+          child: Text(label, style: const TextStyle(fontSize: 13)),
+        ),
+        Expanded(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                onPressed: value > min ? onDecrement : null,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
+                color: Colors.blue,
+                disabledColor: Colors.grey.shade300,
+              ),
+              SizedBox(
+                width: 64,
+                child: Center(
+                  child: Text(
+                    '$value시',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: value < max ? onIncrement : null,
+                icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 28),
+                color: Colors.blue,
+                disabledColor: Colors.grey.shade300,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -123,77 +173,31 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                     const SizedBox(height: 16),
 
                     // 시작 시간
-                    Row(
-                      children: [
-                        const SizedBox(
-                            width: 72,
-                            child: Text('시작 시간',
-                                style: TextStyle(fontSize: 13))),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text('$_dayStartHour시',
-                                  style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue)),
-                              Slider(
-                                value: _dayStartHour.toDouble(),
-                                min: 0,
-                                max: 22,
-                                divisions: 22,
-                                label: '$_dayStartHour시',
-                                onChanged: (v) {
-                                  setState(() {
-                                    _dayStartHour = v.round();
-                                    if (_dayEndHour <= _dayStartHour) {
-                                      _dayEndHour = _dayStartHour + 1;
-                                    }
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    _buildHourStepper(
+                      label: '시작 시간',
+                      value: _dayStartHour,
+                      min: 0,
+                      max: _dayEndHour - 1,
+                      onDecrement: () => setState(() => _dayStartHour--),
+                      onIncrement: () => setState(() {
+                        _dayStartHour++;
+                        if (_dayEndHour <= _dayStartHour) _dayEndHour = _dayStartHour + 1;
+                      }),
                     ),
 
                     const Divider(height: 24),
 
                     // 끝 시간
-                    Row(
-                      children: [
-                        const SizedBox(
-                            width: 72,
-                            child: Text('끝 시간',
-                                style: TextStyle(fontSize: 13))),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text('$_dayEndHour시',
-                                  style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue)),
-                              Slider(
-                                value: _dayEndHour.toDouble(),
-                                min: 1,
-                                max: 24,
-                                divisions: 23,
-                                label: '$_dayEndHour시',
-                                onChanged: (v) {
-                                  setState(() {
-                                    _dayEndHour = v.round();
-                                    if (_dayEndHour <= _dayStartHour) {
-                                      _dayStartHour = _dayEndHour - 1;
-                                    }
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    _buildHourStepper(
+                      label: '끝 시간',
+                      value: _dayEndHour,
+                      min: _dayStartHour + 1,
+                      max: 24,
+                      onDecrement: () => setState(() {
+                        _dayEndHour--;
+                        if (_dayEndHour <= _dayStartHour) _dayStartHour = _dayEndHour - 1;
+                      }),
+                      onIncrement: () => setState(() => _dayEndHour++),
                     ),
 
                     const Divider(height: 16),

@@ -21,7 +21,8 @@ class ConditionalRule {
 class ConditionalRuleSet {
   String name;
   List<ConditionalRule> rules;
-  ConditionalRuleSet({required this.name, required this.rules});
+  Color? color; // 사용자 지정 색상 (null이면 인덱스 기본색 사용)
+  ConditionalRuleSet({required this.name, required this.rules, this.color});
 }
 
 class ScheduleBlock {

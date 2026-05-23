@@ -75,7 +75,8 @@ class _ScheduleAppState extends State<ScheduleApp> {
 
   Color _colorForRuleSet(String ruleSetName) {
     final idx = conditionalRuleSets.indexWhere((r) => r.name == ruleSetName);
-    return ruleSetColor(idx < 0 ? 0 : idx);
+    if (idx < 0) return ruleSetColor(0);
+    return conditionalRuleSets[idx].color ?? ruleSetColor(idx);
   }
 
   // minutes → slot 인덱스 (절대값 → 표시 범위 내 상대값)
@@ -92,6 +93,8 @@ class _ScheduleAppState extends State<ScheduleApp> {
         roundToNearestSlot(TimeOfDay.now(), _slotMinutes);
     int duration = _slotMinutes * 3; // 기본 3슬롯
     final titleController = TextEditingController();
+    Color selectedColor = kUserPaletteColors[0];
+    bool showTitleError = false;
 
     showDialog(
       context: context,
@@ -111,16 +114,70 @@ class _ScheduleAppState extends State<ScheduleApp> {
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextField(
                     controller: titleController,
-                    decoration:
-                        const InputDecoration(hintText: '일정 내용'),
+                    decoration: InputDecoration(
+                      hintText: '일정 내용',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: showTitleError ? Colors.red : Colors.grey,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: showTitleError ? Colors.red : Colors.grey.shade300,
+                        ),
+                      ),
+                    ),
                     maxLines: null,
                     keyboardType: TextInputType.multiline,
                     textInputAction: TextInputAction.newline,
+                    onChanged: (_) {
+                      if (showTitleError) setDialogState(() => showTitleError = false);
+                    },
                   ),
-                  const SizedBox(height: 20),
+                  if (showTitleError)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 4),
+                      child: Text(
+                        '제목을 입력해 주세요.',
+                        style: TextStyle(fontSize: 11, color: Colors.red.shade400),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  // ── 색상 선택 ──
+                  const Text('색상', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: List.generate(kUserPaletteColors.length, (ci) {
+                      final c = kUserPaletteColors[ci];
+                      final isSelected = selectedColor == c;
+                      return GestureDetector(
+                        onTap: () => setDialogState(() => selectedColor = c),
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: isSelected
+                                ? Border.all(color: Colors.black54, width: 2.5)
+                                : Border.all(color: Colors.transparent, width: 2.5),
+                          ),
+                          child: isSelected
+                              ? const Icon(Icons.check, size: 14, color: Colors.black54)
+                              : null,
+                        ),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 14),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -213,9 +270,13 @@ class _ScheduleAppState extends State<ScheduleApp> {
               ElevatedButton(
                 onPressed: () {
                   final title = titleController.text.trim();
-                  if (title.isNotEmpty && duration > 0) {
+                  if (title.isEmpty) {
+                    setDialogState(() => showTitleError = true);
+                    return;
+                  }
+                  if (duration > 0) {
                     _addSchedule(title, selectedTime.hour,
-                        selectedTime.minute, duration);
+                        selectedTime.minute, duration, selectedColor);
                     Navigator.pop(context);
                   }
                 },
@@ -229,13 +290,13 @@ class _ScheduleAppState extends State<ScheduleApp> {
   }
 
   void _addSchedule(
-      String title, int hour, int min, int durationMinutes) {
+      String title, int hour, int min, int durationMinutes, Color color) {
     setState(() {
       final relSlot = _minutesToRelativeSlot(hour, min);
       final durationSlots =
           (durationMinutes / _slotMinutes).ceil();
       schedules.add(ScheduleItem(
-          title, relSlot, durationSlots, Colors.blue.shade100));
+          title, relSlot, durationSlots, color));
     });
   }
 
@@ -443,7 +504,7 @@ class _ScheduleAppState extends State<ScheduleApp> {
             ...conditionalRuleSets.asMap().entries.map((e) =>
                 ListTile(
                   leading: Icon(Icons.auto_awesome,
-                      color: ruleSetColor(e.key)),
+                      color: e.value.color ?? ruleSetColor(e.key)),
                   title: Text(e.value.name),
                   onTap: () {
                     Navigator.pop(context);
@@ -532,7 +593,7 @@ class _ScheduleAppState extends State<ScheduleApp> {
           height: slotHeight,
           decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(
+              top: BorderSide(
                 color: isOnTheHour
                     ? Colors.grey.shade300
                     : isHalfHour

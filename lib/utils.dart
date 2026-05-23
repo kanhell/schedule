@@ -15,6 +15,20 @@ const List<Color> kRuleSetColors = [
   Color(0xFFD7CCC8), // brown
 ];
 
+/// 사용자가 선택할 수 있는 대표 6색 팔레트
+const List<Color> kUserPaletteColors = [
+  Color(0xFF90CAF9), // 파랑
+  Color(0xFFA5D6A7), // 초록
+  Color(0xFFFFAB91), // 주황
+  Color(0xFFCE93D8), // 보라
+  Color(0xFFFFF176), // 노랑
+  Color(0xFFEF9A9A), // 빨강
+];
+
+const List<String> kUserPaletteLabels = [
+  '파랑', '초록', '주황', '보라', '노랑', '빨강',
+];
+
 Color ruleSetColor(int index) => kRuleSetColors[index % kRuleSetColors.length];
 
 // ─────────────────────────────────────────
