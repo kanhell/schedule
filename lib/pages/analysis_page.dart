@@ -12,14 +12,20 @@ class AnalysisPage extends StatefulWidget {
   final List<ScheduleItem> schedules;
   final TimeSettings timeSettings;
   final List<ColorLabel> colorLabels;
+  final List<TimeGoal> timeGoals;
   final ValueChanged<List<ColorLabel>> onColorLabelsChanged;
+  final ValueChanged<List<TimeGoal>> onTimeGoalsChanged;
+  final Future<List<ScheduleItem>> Function(DateTime) onLoadSchedulesForDate;
 
   const AnalysisPage({
     super.key,
     required this.schedules,
     required this.timeSettings,
     required this.colorLabels,
+    required this.timeGoals,
     required this.onColorLabelsChanged,
+    required this.onTimeGoalsChanged,
+    required this.onLoadSchedulesForDate,
   });
 
   @override
@@ -27,10 +33,115 @@ class AnalysisPage extends StatefulWidget {
 }
 
 class _AnalysisPageState extends State<AnalysisPage> {
-  final List<TimeGoal> _goals = [];
+  late List<TimeGoal> _goals;
   final Set<String> _expandedGoalIds = {};
 
-  // ── 색상별 총 시간(분) 계산 ──
+  @override
+  void initState() {
+    super.initState();
+    _goals = List.from(widget.timeGoals);
+    _refreshPeriodCache();
+  }
+
+  @override
+  void didUpdateWidget(AnalysisPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.timeGoals != widget.timeGoals) {
+      _goals = List.from(widget.timeGoals);
+    }
+    // 일정이나 목표가 바뀌면 캐시 무효화 후 재계산
+    if (oldWidget.schedules != widget.schedules ||
+        oldWidget.timeGoals != widget.timeGoals) {
+      _periodCache.clear();
+      _refreshPeriodCache();
+    }
+  }
+
+  void _saveGoals() => widget.onTimeGoalsChanged(_goals);
+
+  // ── 목표 기간 계산: 오늘 기준으로 마지막 초기화일 다음날 ~ 오늘 ──
+  // resetDays가 비어있으면 오늘 하루만.
+  // resetDays = [0=월..6=일]
+  DateTimeRange _goalPeriod(TimeGoal goal) {
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+
+    if (goal.resetDays.isEmpty) {
+      return DateTimeRange(start: todayOnly, end: todayOnly);
+    }
+
+    // 오늘 요일 (0=월..6=일, DateTime.weekday: 1=월..7=일)
+    final todayWeekday = todayOnly.weekday - 1; // 0=월..6=일
+
+    // resetDays를 정렬
+    final sorted = List<int>.from(goal.resetDays)..sort();
+
+    // "가장 최근에 지난 초기화 요일"을 찾는다
+    // = 오늘을 포함해서 과거 방향으로 가장 가까운 resetDay
+    int? latestResetWeekday;
+    int daysBack = 0;
+
+    for (int d = 0; d <= 6; d++) {
+      final candidateWeekday = (todayWeekday - d) % 7;
+      final candidate = (candidateWeekday + 7) % 7;
+      if (sorted.contains(candidate)) {
+        latestResetWeekday = candidate;
+        daysBack = d;
+        break;
+      }
+    }
+
+    if (latestResetWeekday == null) {
+      return DateTimeRange(start: todayOnly, end: todayOnly);
+    }
+
+    // 초기화일 당일은 "이전 주기"이므로 그 다음날부터 시작
+    // 단, 오늘이 초기화 요일이면 오늘 하루만 (daysBack == 0 → start = today)
+    final periodStart = daysBack == 0
+        ? todayOnly
+        : todayOnly.subtract(Duration(days: daysBack - 1));
+
+    return DateTimeRange(start: periodStart, end: todayOnly);
+  }
+
+  // ── 기간 캐시: goalId → (기간, 집계결과) ──
+  final Map<String, ({DateTimeRange range, Map<Color, int> byColor, Map<String, Map<Color, int>> byTitle})>
+      _periodCache = {};
+
+  Future<void> _refreshPeriodCache() async {
+    for (final goal in _goals) {
+      final range = _goalPeriod(goal);
+      final existing = _periodCache[goal.id];
+      // 기간이 같으면 재로드 불필요 (오늘 날짜가 end이므로 매번 갱신)
+      // 실제론 탭 전환·목표 변경 시 항상 새로 로드
+      if (existing != null &&
+          existing.range.start == range.start &&
+          existing.range.end == range.end) {
+        continue;
+      }
+
+      final byColor = <Color, int>{};
+      final byTitle = <String, Map<Color, int>>{};
+
+      DateTime cursor = range.start;
+      while (!cursor.isAfter(range.end)) {
+        final items = await widget.onLoadSchedulesForDate(cursor);
+        for (final item in items) {
+          final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
+          byColor[item.color] = (byColor[item.color] ?? 0) + minutes;
+          byTitle[item.title] ??= {};
+          byTitle[item.title]![item.color] =
+              (byTitle[item.title]![item.color] ?? 0) + minutes;
+        }
+        cursor = cursor.add(const Duration(days: 1));
+      }
+
+      _periodCache[goal.id] = (range: range, byColor: byColor, byTitle: byTitle);
+    }
+    if (mounted) setState(() {});
+  }
+
+  // ── 오늘 하루 색상별 총 시간(분) — 도넛 차트용 ──
   Map<Color, int> _calcMinutesByColor() {
     final map = <Color, int>{};
     for (final item in widget.schedules) {
@@ -57,9 +168,9 @@ class _AnalysisPageState extends State<AnalysisPage> {
     return '$m분';
   }
 
-  // ── 목표 달성 여부 ──
-  bool _isGoalAchieved(TimeGoal goal, Map<Color, int> minutesByColor) {
-    final actual = minutesByColor[goal.color] ?? 0;
+  // ── 목표 달성 여부 (초록) or 목표 실패 여부 (주황) ──
+  bool _isGoalAchieved(TimeGoal goal) {
+    final actual = _goalMinutesByColor(goal)[goal.color] ?? 0;
     return goal.type == GoalType.atLeast
         ? actual >= goal.targetMinutes
         : actual < goal.targetMinutes;
@@ -271,6 +382,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       _goals.add(goal);
                     }
                   });
+                  _saveGoals();
                   Navigator.pop(ctx);
                 },
                 child: const Text('저장'),
@@ -282,15 +394,31 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  // ── 특정 색상의 일정 이름별 시간(분) 집계 ──
-  Map<String, int> _calcMinutesByTitleForColor(Color color) {
-    final map = <String, int>{};
-    for (final item in widget.schedules) {
-      if (item.color != color) continue;
-      final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
-      map[item.title] = (map[item.title] ?? 0) + minutes;
+  // ── 목표 기간의 색상별 시간 (캐시에서) ──
+  Map<Color, int> _goalMinutesByColor(TimeGoal goal) =>
+      _periodCache[goal.id]?.byColor ?? {};
+
+  // ── 목표 기간의 이름별 시간 (해당 색상만, 캐시에서) ──
+  Map<String, int> _goalMinutesByTitle(TimeGoal goal) {
+    final byTitle = _periodCache[goal.id]?.byTitle ?? {};
+    final result = <String, int>{};
+    for (final entry in byTitle.entries) {
+      final minutes = entry.value[goal.color];
+      if (minutes != null && minutes > 0) {
+        result[entry.key] = minutes;
+      }
     }
-    return map;
+    return result;
+  }
+
+  // ── 기간 레이블 (예: "5/19 ~ 5/23") ──
+  String _periodLabel(TimeGoal goal) {
+    final range = _periodCache[goal.id]?.range;
+    if (range == null) return '';
+    final s = range.start;
+    final e = range.end;
+    if (s == e) return '${s.month}/${s.day}';
+    return '${s.month}/${s.day} ~ ${e.month}/${e.day}';
   }
 
   void _toggleGoalExpanded(String id) {
@@ -308,17 +436,35 @@ class _AnalysisPageState extends State<AnalysisPage> {
     final minutesByColor = _calcMinutesByColor();
     final totalMinutes = minutesByColor.values.fold(0, (a, b) => a + b);
 
+    // 기타설정 기준 하루 전체 시간(분)
+    final dayTotalMinutes =
+        (widget.timeSettings.dayEndHour - widget.timeSettings.dayStartHour) * 60;
+    final unallocatedMinutes = (dayTotalMinutes - totalMinutes).clamp(0, dayTotalMinutes);
+
     final entries = widget.colorLabels.map((label) {
       final minutes = minutesByColor[label.color] ?? 0;
       return ColorStat(
         label: label,
         minutes: minutes,
-        ratio: totalMinutes > 0 ? minutes / totalMinutes : 0,
+        ratio: dayTotalMinutes > 0 ? minutes / dayTotalMinutes : 0,
       );
     }).toList();
 
     final usedEntries = entries.where((e) => e.minutes > 0).toList()
       ..sort((a, b) => b.minutes.compareTo(a.minutes));
+
+    // 미할당 시간 ColorStat (회색, 도넛 마지막)
+    final unallocatedStat = ColorStat(
+      label: ColorLabel(color: Colors.grey.shade300, name: '미할당'),
+      minutes: unallocatedMinutes,
+      ratio: dayTotalMinutes > 0 ? unallocatedMinutes / dayTotalMinutes : 0,
+    );
+
+    // 도넛용: 색상 항목 + 미할당
+    final donutEntries = [
+      ...usedEntries,
+      if (unallocatedMinutes > 0) unallocatedStat,
+    ];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FB),
@@ -335,10 +481,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
               padding: const EdgeInsets.all(16),
               children: [
                 if (widget.schedules.isNotEmpty) ...[
-                  _buildDonutCard(usedEntries, totalMinutes),
+                  _buildDonutCard(donutEntries, usedEntries, totalMinutes, dayTotalMinutes, unallocatedMinutes),
                   const SizedBox(height: 16),
                 ],
-                _buildGoalsCard(minutesByColor),
+                _buildGoalsCard(),
               ],
             ),
       floatingActionButton: FloatingActionButton(
@@ -370,7 +516,24 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  Widget _buildDonutCard(List<ColorStat> usedEntries, int totalMinutes) {
+  Widget _buildDonutCard(
+    List<ColorStat> donutEntries,
+    List<ColorStat> usedEntries,
+    int totalMinutes,
+    int dayTotalMinutes,
+    int unallocatedMinutes,
+  ) {
+    // 인덱스: 미할당 맨 위, 그 아래 색상 항목 (시간 많은 순)
+    final legendEntries = [
+      if (unallocatedMinutes > 0)
+        ColorStat(
+          label: ColorLabel(color: Colors.grey.shade400, name: '미할당'),
+          minutes: unallocatedMinutes,
+          ratio: dayTotalMinutes > 0 ? unallocatedMinutes / dayTotalMinutes : 0,
+        ),
+      ...usedEntries,
+    ];
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -390,7 +553,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 children: [
                   CustomPaint(
                     size: const Size(200, 200),
-                    painter: DonutPainter(usedEntries),
+                    painter: DonutPainter(donutEntries),
                   ),
                   Column(
                     mainAxisSize: MainAxisSize.min,
@@ -402,35 +565,73 @@ class _AnalysisPageState extends State<AnalysisPage> {
                             fontWeight: FontWeight.bold,
                             color: Colors.black87),
                       ),
-                      const Text('총 시간',
-                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(
+                        '/ ${_formatMinutes(dayTotalMinutes)}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
                     ],
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            Wrap(
-              spacing: 10,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: usedEntries.map((e) {
+            // 인덱스: 미할당 맨 위, 나머지 아래
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: legendEntries.map((e) {
                 final pct = (e.ratio * 100).round();
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                          color: e.label.color, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${e.label.name} ${_formatMinutes(e.minutes)} ($pct%)',
-                      style: const TextStyle(fontSize: 12, color: Colors.black87),
-                    ),
-                  ],
+                final isUnallocated = e.label.name == '미할당';
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: e.label.color,
+                          shape: BoxShape.circle,
+                          border: isUnallocated
+                              ? Border.all(color: Colors.grey.shade400, width: 1)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          e.label.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isUnallocated
+                                ? Colors.grey.shade500
+                                : Colors.black87,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _formatMinutes(e.minutes),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: isUnallocated
+                              ? Colors.grey.shade500
+                              : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: 36,
+                        child: Text(
+                          '($pct%)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade400,
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
                 );
               }).toList(),
             ),
@@ -440,7 +641,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  Widget _buildGoalsCard(Map<Color, int> minutesByColor) {
+  Widget _buildGoalsCard() {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -471,7 +672,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
               const SizedBox(height: 4),
             ] else ...[
               const SizedBox(height: 12),
-              ..._goals.map((goal) => _buildGoalRow(goal, minutesByColor)),
+              ..._goals.map((goal) => _buildGoalRow(goal)),
             ],
           ],
         ),
@@ -479,9 +680,9 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  Widget _buildGoalRow(TimeGoal goal, Map<Color, int> minutesByColor) {
-    final actual = minutesByColor[goal.color] ?? 0;
-    final achieved = _isGoalAchieved(goal, minutesByColor);
+  Widget _buildGoalRow(TimeGoal goal) {
+    final actual = _goalMinutesByColor(goal)[goal.color] ?? 0;
+    final achieved = _isGoalAchieved(goal);
     final isAtLeast = goal.type == GoalType.atLeast;
     final isExpanded = _expandedGoalIds.contains(goal.id);
 
@@ -497,9 +698,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
         : goal.resetDays.map((d) => dayLabels[d]).join('·');
 
     final labelName = _labelName(goal.color);
+    final periodLabel = _periodLabel(goal);
 
     // 이름별 시간 집계 (내림차순 정렬)
-    final titleMinutes = _calcMinutesByTitleForColor(goal.color).entries.toList()
+    final titleMinutes = _goalMinutesByTitle(goal).entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
     return Padding(
@@ -603,6 +805,12 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       Text(resetLabel,
                           style: TextStyle(
                               fontSize: 11, color: Colors.grey.shade400)),
+                      if (periodLabel.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        Text('($periodLabel)',
+                            style: TextStyle(
+                                fontSize: 10, color: Colors.grey.shade400)),
+                      ],
                       // ── 토글 버튼 ──
                       if (titleMinutes.isNotEmpty) ...[
                         const SizedBox(width: 6),
@@ -764,6 +972,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
 
   void _deleteGoal(String id) {
     setState(() => _goals.removeWhere((g) => g.id == id));
+    _saveGoals();
   }
 
   void _showDeleteConfirm(TimeGoal goal) {

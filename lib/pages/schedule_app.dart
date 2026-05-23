@@ -2,11 +2,8 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../widgets/utils.dart';
 import '../persistence.dart';
+import '../widgets/time_goal.dart';
 import 'home_page.dart';
-import 'routine_settings_page.dart';
-import 'day_schedule_settings_page.dart';
-import 'general_settings_page.dart';
-import 'color_label_settings_page.dart';
 import 'analysis_page.dart';
 
 // ─── 네비게이션 루트 ───────────────────────────────────────────
@@ -34,6 +31,7 @@ class _ScheduleAppState extends State<ScheduleApp> {
   final List<String> _dayNames = ['월', '화', '수', '목', '금', '토', '일'];
   late List<List<ScheduleItem>> _daySchedules;
   late List<ColorLabel> colorLabels;
+  List<TimeGoal> _timeGoals = [];
 
   // ── 현재 선택 날짜의 일정 ──
   List<ScheduleItem> get _currentSchedules =>
@@ -92,6 +90,8 @@ class _ScheduleAppState extends State<ScheduleApp> {
       final savedLabels = data['colorLabels'] as List<ColorLabel>?;
       if (savedLabels != null) colorLabels = savedLabels;
 
+      _timeGoals = data['timeGoals'] as List<TimeGoal>;
+
       _loaded = true;
     });
   }
@@ -134,6 +134,11 @@ class _ScheduleAppState extends State<ScheduleApp> {
     AppPersistence.saveColorLabels(cl);
   }
 
+  void _setTimeGoals(List<TimeGoal> goals) {
+    setState(() => _timeGoals = goals);
+    AppPersistence.saveTimeGoals(goals);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
@@ -162,7 +167,16 @@ class _ScheduleAppState extends State<ScheduleApp> {
         schedules: _currentSchedules,
         timeSettings: timeSettings,
         colorLabels: colorLabels,
+        timeGoals: _timeGoals,
         onColorLabelsChanged: _setColorLabels,
+        onTimeGoalsChanged: _setTimeGoals,
+        onLoadSchedulesForDate: (date) async {
+          final key = _dateKey(date);
+          if (_schedulesCache.containsKey(key)) return _schedulesCache[key]!;
+          final items = await AppPersistence.loadSchedulesForDate(date);
+          _schedulesCache[key] = items;
+          return items;
+        },
       ),
     ];
 

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
-import 'widgets/utils.dart';
+import 'widgets/time_goal.dart';
 
 // ─────────────────────────────────────────
 // 영구 저장소 헬퍼
@@ -15,6 +15,7 @@ class AppPersistence {
   static const _keyRuleSets      = 'rule_sets';
   static const _keyDaySchedules  = 'day_schedules';
   static const _keyColorLabels   = 'color_labels';
+  static const _keyTimeGoals     = 'time_goals';
   // 날짜별 일정: 'schedules_YYYY-MM-DD'
 
   // ── Color 직렬화 ──────────────────────────────────────────────
@@ -216,6 +217,39 @@ class AppPersistence {
         .toList();
   }
 
+  // ── TimeGoal ──────────────────────────────────────────────────
+  static Map<String, dynamic> _timeGoalToJson(TimeGoal g) => {
+        'id': g.id,
+        'type': g.type.name,
+        'color': _colorToInt(g.color),
+        'targetMinutes': g.targetMinutes,
+        'resetDays': g.resetDays,
+      };
+
+  static TimeGoal _timeGoalFromJson(Map<String, dynamic> j) => TimeGoal(
+        id: j['id'] as String,
+        type: GoalType.values.byName(j['type'] as String),
+        color: _intToColor(j['color'] as int),
+        targetMinutes: j['targetMinutes'] as int,
+        resetDays: (j['resetDays'] as List).cast<int>(),
+      );
+
+  static Future<void> saveTimeGoals(List<TimeGoal> goals) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _keyTimeGoals, jsonEncode(goals.map(_timeGoalToJson).toList()));
+  }
+
+  static Future<List<TimeGoal>> loadTimeGoals() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_keyTimeGoals);
+    if (raw == null) return [];
+    final list = jsonDecode(raw) as List;
+    return list
+        .map((e) => _timeGoalFromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   // ── 전체 초기 로딩 (오늘 날짜 기준) ──────────────────────────
   static Future<Map<String, dynamic>> loadAll() async {
     final results = await Future.wait([
@@ -224,6 +258,7 @@ class AppPersistence {
       loadRuleSets(),
       loadDaySchedules(),
       loadColorLabels(),
+      loadTimeGoals(),
     ]);
     return {
       'schedules':    results[0],
@@ -231,6 +266,7 @@ class AppPersistence {
       'ruleSets':     results[2],
       'daySchedules': results[3],
       'colorLabels':  results[4],
+      'timeGoals':    results[5],
     };
   }
 

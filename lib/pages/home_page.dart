@@ -103,18 +103,24 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ── 날짜 표시 문자열 ──────────────────────────────────────────
+  String _getDate() {
+    final d = widget.selectedDate;
+    const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
+    final wd = weekdays[d.weekday - 1];
+    return '${d.month}/${d.day} $wd';
+  }
   String _dateLabel() {
     final d = widget.selectedDate;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final diff = d.difference(today).inDays;
-    const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
-    final wd = weekdays[d.weekday - 1];
 
-    if (diff == 0) return '오늘 (${d.month}/${d.day} $wd)';
-    if (diff == 1) return '내일 (${d.month}/${d.day} $wd)';
-    if (diff == -1) return '어제 (${d.month}/${d.day} $wd)';
-    return '${d.month}/${d.day} ($wd)';
+    if (diff == 0) return '오늘';
+    if (diff == 1) return '내일';
+    if (diff > 1) return '$diff일뒤';
+    if (diff == -1) return '어제';
+    if (diff < -1) return '${-diff}일전';
+    return '';
   }
 
   // ── 메인 메뉴 ───────────────────────────────────────────────
@@ -319,35 +325,34 @@ class _HomePageState extends State<HomePage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _dateLabel(),
+                  _getDate(),
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: _isToday ? Colors.blue.shade700 : Colors.black87,
                   ),
                 ),
-                if (!_isToday) ...[
-                  const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: () => widget.onDateChanged(
-                      DateTime(DateTime.now().year, DateTime.now().month,
-                          DateTime.now().day),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Text('오늘',
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold)),
-                    ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => widget.onDateChanged(
+                    DateTime(DateTime.now().year, DateTime.now().month,
+                        DateTime.now().day),
                   ),
-                ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      _dateLabel(),
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                ),
               ],
             ),
           ),
