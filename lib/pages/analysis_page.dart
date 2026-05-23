@@ -282,8 +282,25 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  void _deleteGoal(String id) {
-    setState(() => _goals.removeWhere((g) => g.id == id));
+  // ── 특정 색상의 일정 이름별 시간(분) 집계 ──
+  Map<String, int> _calcMinutesByTitleForColor(Color color) {
+    final map = <String, int>{};
+    for (final item in widget.schedules) {
+      if (item.color != color) continue;
+      final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
+      map[item.title] = (map[item.title] ?? 0) + minutes;
+    }
+    return map;
+  }
+
+  void _toggleGoalExpanded(String id) {
+    setState(() {
+      if (_expandedGoalIds.contains(id)) {
+        _expandedGoalIds.remove(id);
+      } else {
+        _expandedGoalIds.add(id);
+      }
+    });
   }
 
   @override
@@ -466,6 +483,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     final actual = minutesByColor[goal.color] ?? 0;
     final achieved = _isGoalAchieved(goal, minutesByColor);
     final isAtLeast = goal.type == GoalType.atLeast;
+    final isExpanded = _expandedGoalIds.contains(goal.id);
 
     final progress = (actual / goal.targetMinutes).clamp(0.0, 1.0);
     final typeColor = isAtLeast ? Colors.green : Colors.orange;
@@ -479,6 +497,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
         : goal.resetDays.map((d) => dayLabels[d]).join('·');
 
     final labelName = _labelName(goal.color);
+
+    // 이름별 시간 집계 (내림차순 정렬)
+    final titleMinutes = _calcMinutesByTitleForColor(goal.color).entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -501,6 +523,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── 헤더 행 ──
               Row(
                 children: [
                   Container(
@@ -543,6 +566,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 ],
               ),
               const SizedBox(height: 10),
+
+              // ── 진행 바 ──
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
@@ -556,6 +581,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 ),
               ),
               const SizedBox(height: 8),
+
+              // ── 하단 요약 행 ──
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -576,15 +603,167 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       Text(resetLabel,
                           style: TextStyle(
                               fontSize: 11, color: Colors.grey.shade400)),
+                      // ── 토글 버튼 ──
+                      if (titleMinutes.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () {
+                            _toggleGoalExpanded(goal.id);
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isExpanded
+                                  ? goal.color.withValues(alpha: 0.18)
+                                  : Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '내역',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: isExpanded
+                                        ? goal.color
+                                        : Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                Icon(
+                                  isExpanded
+                                      ? Icons.keyboard_arrow_up_rounded
+                                      : Icons.keyboard_arrow_down_rounded,
+                                  size: 14,
+                                  color: isExpanded
+                                      ? goal.color
+                                      : Colors.grey.shade500,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
+              ),
+
+              // ── 펼쳐지는 이름별 내역 ──
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOut,
+                child: isExpanded && titleMinutes.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: goal.color.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: goal.color.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '일정별 내역',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade500,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...titleMinutes.map((entry) {
+                                final ratio = actual > 0
+                                    ? entry.value / actual
+                                    : 0.0;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 7),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                    entry.key,
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: Colors.black87,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _formatMinutes(entry.value),
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: goal.color
+                                                        .withValues(alpha: 0.85),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 3),
+                                            ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(3),
+                                              child: LinearProgressIndicator(
+                                                value: ratio,
+                                                minHeight: 4,
+                                                backgroundColor:
+                                                    Colors.grey.shade200,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                        Color>(
+                                                  goal.color.withValues(
+                                                      alpha: 0.6),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  void _deleteGoal(String id) {
+    setState(() => _goals.removeWhere((g) => g.id == id));
   }
 
   void _showDeleteConfirm(TimeGoal goal) {
