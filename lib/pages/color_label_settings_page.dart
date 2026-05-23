@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models.dart';
-import '../utils.dart';
+import '../widgets/utils.dart';
 
 /// 색상별 이름을 설정하는 페이지
 class ColorLabelSettingsPage extends StatefulWidget {

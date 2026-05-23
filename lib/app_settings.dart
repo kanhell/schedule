@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'models.dart';
-import 'utils.dart';
+import 'widgets/utils.dart';
 
 // ─────────────────────────────────────────
 // 앱 전역 설정 (루틴셋 등 공유 상태)

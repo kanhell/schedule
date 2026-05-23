@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models.dart';
-import '../../utils.dart';
+import '../widgets/utils.dart';
 import 'routine_settings_page.dart';
 import 'day_schedule_settings_page.dart';
 import 'general_settings_page.dart';

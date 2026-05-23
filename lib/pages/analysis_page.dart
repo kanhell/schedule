@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models.dart';
-import '../utils.dart';
+import '../widgets/utils.dart';
 import '../widgets/donut_chart.dart';
-import '../time_goal.dart';
+import '../widgets/time_goal.dart';
 
 // ─────────────────────────────────────────
 // 분석 페이지
@@ -28,6 +28,7 @@ class AnalysisPage extends StatefulWidget {
 
 class _AnalysisPageState extends State<AnalysisPage> {
   final List<TimeGoal> _goals = [];
+  final Set<String> _expandedGoalIds = {};
 
   // ── 색상별 총 시간(분) 계산 ──
   Map<Color, int> _calcMinutesByColor() {

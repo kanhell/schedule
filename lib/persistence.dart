@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
-import 'utils.dart';
+import 'widgets/utils.dart';
 
 // ─────────────────────────────────────────
 // 영구 저장소 헬퍼

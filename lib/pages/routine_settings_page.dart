@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models.dart';
-import '../utils.dart';
+import '../widgets/utils.dart';
 import '../widgets/mini_timeline.dart';
 
 class ConditionalRuleSettingsPage extends StatefulWidget {
