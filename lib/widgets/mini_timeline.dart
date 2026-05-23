@@ -72,7 +72,7 @@ class MiniTimeline extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: item.color,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: item.color.withOpacity(0.8), width: 1),
+                  border: Border.all(color: item.color.withValues(alpha: 0.8), width: 1),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text(

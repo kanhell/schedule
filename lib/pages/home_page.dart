@@ -1,137 +1,64 @@
 import 'package:flutter/material.dart';
-import '../models.dart';
-import '../utils.dart';
+import '../../models.dart';
+import '../../utils.dart';
 import 'routine_settings_page.dart';
 import 'day_schedule_settings_page.dart';
 import 'general_settings_page.dart';
-import 'analysis_page.dart';
-
-// ─── 네비게이션 루트 ───────────────────────────────────────────
-class ScheduleApp extends StatefulWidget {
-  const ScheduleApp({super.key});
-  @override
-  State<ScheduleApp> createState() => _ScheduleAppState();
-}
-
-class _ScheduleAppState extends State<ScheduleApp> {
-  int _currentIndex = 0;
-
-  // 공유 상태 (홈 ↔ 분석 공유)
-  List<ScheduleItem> schedules = [];
-  TimeSettings timeSettings = const TimeSettings();
-  List<ConditionalRuleSet> conditionalRuleSets = [
-    ConditionalRuleSet(
-      name: '저녁 루틴',
-      color: kUserPaletteColors[0],
-      options: [
-        RoutineOption(
-          name: '기본 (80분)',
-          blocks: [ScheduleBlock(title: '저녁 루틴', durationMinutes: 80)],
-        ),
-        RoutineOption(
-          name: '짧게 (40분)',
-          blocks: [ScheduleBlock(title: '저녁 루틴', durationMinutes: 40)],
-        ),
-      ],
-    ),
-  ];
-  final List<String> _dayNames = ['월', '화', '수', '목', '금', '토', '일'];
-  late List<List<ScheduleItem>> _daySchedules;
-
-  // 색상별 이름 (팔레트 6색 고정)
-  late List<ColorLabel> colorLabels;
-
-  @override
-  void initState() {
-    super.initState();
-    _daySchedules = List.generate(7, (_) => []);
-    colorLabels = List.generate(
-      kUserPaletteColors.length,
-      (i) => ColorLabel(color: kUserPaletteColors[i], name: kUserPaletteLabels[i]),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pages = [
-      _HomePage(
-        schedules: schedules,
-        timeSettings: timeSettings,
-        conditionalRuleSets: conditionalRuleSets,
-        dayNames: _dayNames,
-        daySchedules: _daySchedules,
-        onSchedulesChanged: (s) => setState(() => schedules = s),
-        onTimeSettingsChanged: (t) => setState(() => timeSettings = t),
-        onRuleSetsChanged: (r) => setState(() => conditionalRuleSets = r),
-        onDaySchedulesChanged: (d) => setState(() => _daySchedules = d),
-      ),
-      AnalysisPage(
-        schedules: schedules,
-        timeSettings: timeSettings,
-        colorLabels: colorLabels,
-        onColorLabelsChanged: (updated) => setState(() => colorLabels = updated),
-      ),
-    ];
-
-    return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today),
-            label: '오늘',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: '분석',
-          ),
-        ],
-      ),
-    );
-  }
-}
+import 'color_label_settings_page.dart';
+import '../widgets/schedule_dialogs.dart';
 
 // ─── 홈(타임라인) 페이지 ──────────────────────────────────────
-class _HomePage extends StatefulWidget {
+class HomePage extends StatefulWidget {
+  final DateTime selectedDate;
   final List<ScheduleItem> schedules;
   final TimeSettings timeSettings;
   final List<ConditionalRuleSet> conditionalRuleSets;
   final List<String> dayNames;
   final List<List<ScheduleItem>> daySchedules;
+  final List<ColorLabel> colorLabels;
   final ValueChanged<List<ScheduleItem>> onSchedulesChanged;
   final ValueChanged<TimeSettings> onTimeSettingsChanged;
   final ValueChanged<List<ConditionalRuleSet>> onRuleSetsChanged;
   final ValueChanged<List<List<ScheduleItem>>> onDaySchedulesChanged;
+  final ValueChanged<List<ColorLabel>> onColorLabelsChanged;
+  final Future<void> Function(DateTime) onDateChanged;
 
-  const _HomePage({
+  const HomePage({
+    super.key,
+    required this.selectedDate,
     required this.schedules,
     required this.timeSettings,
     required this.conditionalRuleSets,
     required this.dayNames,
     required this.daySchedules,
+    required this.colorLabels,
     required this.onSchedulesChanged,
     required this.onTimeSettingsChanged,
     required this.onRuleSetsChanged,
     required this.onDaySchedulesChanged,
+    required this.onColorLabelsChanged,
+    required this.onDateChanged,
   });
 
   @override
-  State<_HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<_HomePage> {
+class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
 
   double get slotHeight => 25.0;
   int get _totalSlots => widget.timeSettings.totalSlots;
   int get _slotMinutes => widget.timeSettings.slotMinutes;
   int get _dayStartHour => widget.timeSettings.dayStartHour;
-
   List<ScheduleItem> get _schedules => widget.schedules;
+
+  // ── 오늘 기준 판단 ──
+  bool get _isToday {
+    final now = DateTime.now();
+    final d = widget.selectedDate;
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
 
   @override
   void initState() {
@@ -140,9 +67,10 @@ class _HomePageState extends State<_HomePage> {
   }
 
   @override
-  void didUpdateWidget(_HomePage oldWidget) {
+  void didUpdateWidget(HomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.timeSettings != widget.timeSettings) {
+    if (oldWidget.timeSettings != widget.timeSettings ||
+        oldWidget.selectedDate != widget.selectedDate) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrentTime());
     }
   }
@@ -174,474 +102,19 @@ class _HomePageState extends State<_HomePage> {
     return widget.conditionalRuleSets[idx].color ?? ruleSetColor(idx);
   }
 
-  int _minutesToRelativeSlot(int hour, int minute) {
-    final totalMinutes = hour * 60 + minute;
-    final absoluteSlot = totalMinutes ~/ _slotMinutes;
-    final startSlot = (_dayStartHour * 60) ~/ _slotMinutes;
-    return absoluteSlot - startSlot;
-  }
+  // ── 날짜 표시 문자열 ──────────────────────────────────────────
+  String _dateLabel() {
+    final d = widget.selectedDate;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = d.difference(today).inDays;
+    const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
+    final wd = weekdays[d.weekday - 1];
 
-  void _updateSchedules(List<ScheduleItem> updated) {
-    widget.onSchedulesChanged(updated);
-  }
-
-  // ── 직접 일정 추가 ──────────────────────────────────────────
-  void _showManualAddDialog() {
-    TimeOfDay selectedTime = roundToNearestSlot(TimeOfDay.now(), _slotMinutes);
-    int duration = _slotMinutes * 3;
-    final titleController = TextEditingController();
-    Color selectedColor = kUserPaletteColors[0];
-    bool showTitleError = false;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final startAbsMin = selectedTime.hour * 60 + selectedTime.minute;
-          final endAbsMin = startAbsMin + duration;
-          final endHour = (endAbsMin ~/ 60) % 24;
-          final endMin = endAbsMin % 60;
-
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            title: const Text('일정 추가', style: TextStyle(fontWeight: FontWeight.bold)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: titleController,
-                    decoration: InputDecoration(
-                      hintText: '일정 내용',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                            color: showTitleError ? Colors.red : Colors.grey),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                            color: showTitleError
-                                ? Colors.red
-                                : Colors.grey.shade300),
-                      ),
-                    ),
-                    maxLines: null,
-                    keyboardType: TextInputType.multiline,
-                    textInputAction: TextInputAction.newline,
-                    onChanged: (_) {
-                      if (showTitleError)
-                        setDialogState(() => showTitleError = false);
-                    },
-                  ),
-                  if (showTitleError)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, left: 4),
-                      child: Text('제목을 입력해 주세요.',
-                          style: TextStyle(
-                              fontSize: 11, color: Colors.red.shade400)),
-                    ),
-                  const SizedBox(height: 14),
-                  const Text('색상',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: List.generate(kUserPaletteColors.length, (ci) {
-                      final c = kUserPaletteColors[ci];
-                      final isSelected = selectedColor == c;
-                      return GestureDetector(
-                        onTap: () => setDialogState(() => selectedColor = c),
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(
-                            color: c,
-                            shape: BoxShape.circle,
-                            border: isSelected
-                                ? Border.all(color: Colors.black54, width: 2.5)
-                                : Border.all(
-                                    color: Colors.transparent, width: 2.5),
-                          ),
-                          child: isSelected
-                              ? const Icon(Icons.check,
-                                  size: 14, color: Colors.black54)
-                              : null,
-                        ),
-                      );
-                    }),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('시작 시간'),
-                      TextButton(
-                        onPressed: () async {
-                          final time = await showTimePicker(
-                              context: context, initialTime: selectedTime);
-                          if (time != null) {
-                            setDialogState(() => selectedTime =
-                                roundToNearestSlot(time, _slotMinutes));
-                          }
-                        },
-                        child: Text(
-                          '${selectedTime.hour}시 ${selectedTime.minute.toString().padLeft(2, '0')}분',
-                          style: const TextStyle(fontSize: 18),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('소요 시간'),
-                      Text(
-                        '$endHour시 ${endMin.toString().padLeft(2, '0')}분 종료',
-                        style:
-                            const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        onPressed: () {
-                          if (duration > _slotMinutes)
-                            setDialogState(() => duration -= _slotMinutes);
-                        },
-                        icon: const Icon(Icons.remove_circle_outline),
-                      ),
-                      SizedBox(
-                        width: 72,
-                        child: Center(
-                          child: Text('$duration분',
-                              style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue)),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () =>
-                            setDialogState(() => duration += _slotMinutes),
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [_slotMinutes, _slotMinutes * 3, 60].map((val) {
-                      return OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          shape: const StadiumBorder(),
-                          side: const BorderSide(color: Colors.blue),
-                        ),
-                        onPressed: () => setDialogState(() => duration += val),
-                        child: Text('+$val분',
-                            style: const TextStyle(fontSize: 12)),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('취소')),
-              ElevatedButton(
-                onPressed: () {
-                  final title = titleController.text.trim();
-                  if (title.isEmpty) {
-                    setDialogState(() => showTitleError = true);
-                    return;
-                  }
-                  if (duration > 0) {
-                    final relSlot =
-                        _minutesToRelativeSlot(selectedTime.hour, selectedTime.minute);
-                    final durationSlots = (duration / _slotMinutes).ceil();
-                    final updated = List<ScheduleItem>.from(_schedules)
-                      ..add(ScheduleItem(
-                          title, relSlot, durationSlots, selectedColor));
-                    _updateSchedules(updated);
-                    Navigator.pop(context);
-                  }
-                },
-                child: const Text('저장'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  // ── 루틴 적용: 시작시간 + 옵션 선택 ────────────────────────
-  void _showRuleSetApplyDialog(ConditionalRuleSet ruleSet) {
-    TimeOfDay selectedTime = roundToNearestSlot(TimeOfDay.now(), _slotMinutes);
-    RoutineOption? selectedOption =
-        ruleSet.options.isNotEmpty ? ruleSet.options.first : null;
-    final color = _colorForRuleSet(ruleSet.name);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          // 종료시간 계산
-          String endTimeStr = '';
-          if (selectedOption != null) {
-            final totalMin = selectedOption?.blocks
-                .fold(0, (sum, b) => sum + b.durationMinutes);
-            final startMin = selectedTime.hour * 60 + selectedTime.minute;
-            final endMin = startMin + totalMin!;
-            final eh = (endMin ~/ 60) % 24;
-            final em = endMin % 60;
-            endTimeStr =
-                '→ $eh시 ${em.toString().padLeft(2, '0')}분 종료';
-          }
-
-          return AlertDialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15)),
-            title: Row(
-              children: [
-                CircleAvatar(backgroundColor: color, radius: 8),
-                const SizedBox(width: 8),
-                Text(ruleSet.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 시작 시간
-                  const Text('시작 시간',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 4),
-                  InkWell(
-                    onTap: () async {
-                      final t = await showTimePicker(
-                          context: ctx, initialTime: selectedTime);
-                      if (t != null) {
-                        setDialogState(() => selectedTime =
-                            roundToNearestSlot(t, _slotMinutes));
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '${selectedTime.hour}시 ${selectedTime.minute.toString().padLeft(2, '0')}분',
-                            style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue),
-                          ),
-                          const Icon(Icons.edit, size: 16, color: Colors.blue),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (endTimeStr.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, left: 4),
-                      child: Text(endTimeStr,
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.grey)),
-                    ),
-                  const SizedBox(height: 20),
-                  // 옵션 선택
-                  const Text('옵션',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 8),
-                  if (ruleSet.options.isEmpty)
-                    const Text('등록된 옵션이 없습니다.',
-                        style:
-                            TextStyle(fontSize: 13, color: Colors.grey))
-                  else
-                    ...ruleSet.options.map((opt) {
-                      final totalMin = opt.blocks
-                          .fold(0, (sum, b) => sum + b.durationMinutes);
-                      final isSelected = selectedOption == opt;
-                      return GestureDetector(
-                        onTap: () =>
-                            setDialogState(() => selectedOption = opt),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? color.withValues(alpha: 0.3)
-                                : Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isSelected ? color : Colors.grey.shade200,
-                              width: isSelected ? 2 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 18,
-                                height: 18,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: isSelected
-                                          ? Colors.blue
-                                          : Colors.grey.shade400,
-                                      width: 2),
-                                  color: isSelected
-                                      ? Colors.blue
-                                      : Colors.transparent,
-                                ),
-                                child: isSelected
-                                    ? const Icon(Icons.check,
-                                        size: 10, color: Colors.white)
-                                    : null,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(opt.name,
-                                        style: TextStyle(
-                                            fontWeight: isSelected
-                                                ? FontWeight.bold
-                                                : FontWeight.normal)),
-                                    Text('$totalMin분',
-                                        style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('취소')),
-              ElevatedButton(
-                onPressed: selectedOption == null
-                    ? null
-                    : () {
-                        _applyRoutine(ruleSet, selectedOption!, selectedTime);
-                        Navigator.pop(ctx);
-                      },
-                child: const Text('적용'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  void _applyRoutine(
-      ConditionalRuleSet ruleSet, RoutineOption option, TimeOfDay startTime) {
-    final color = _colorForRuleSet(ruleSet.name);
-    final updated = List<ScheduleItem>.from(_schedules)
-      ..removeWhere((s) => s.ruleSetName == ruleSet.name);
-
-    int relSlot = _minutesToRelativeSlot(startTime.hour, startTime.minute);
-    for (final block in option.blocks) {
-      final durationSlots = (block.durationMinutes / _slotMinutes).ceil();
-      updated.add(ScheduleItem(
-        block.title,
-        relSlot,
-        durationSlots,
-        color,
-        ruleSetName: ruleSet.name,
-      ));
-      relSlot += durationSlots;
-    }
-    _updateSchedules(updated);
-  }
-
-  // ── 일정 탭 → 삭제 옵션 ────────────────────────────────────
-  void _showItemMenu(ScheduleItem item) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                        color: item.color, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(item.title,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('삭제', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                final updated = List<ScheduleItem>.from(_schedules)..remove(item);
-                _updateSchedules(updated);
-                Navigator.pop(ctx);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.close),
-              title: const Text('닫기'),
-              onTap: () => Navigator.pop(ctx),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (diff == 0) return '오늘 (${d.month}/${d.day} $wd)';
+    if (diff == 1) return '내일 (${d.month}/${d.day} $wd)';
+    if (diff == -1) return '어제 (${d.month}/${d.day} $wd)';
+    return '${d.month}/${d.day} ($wd)';
   }
 
   // ── 메인 메뉴 ───────────────────────────────────────────────
@@ -658,7 +131,13 @@ class _HomePageState extends State<_HomePage> {
               title: const Text('일정 추가'),
               onTap: () {
                 Navigator.pop(context);
-                _showManualAddDialog();
+                showManualAddDialog(
+                  context: context,
+                  slotMinutes: _slotMinutes,
+                  dayStartHour: _dayStartHour,
+                  schedules: _schedules,
+                  onSave: widget.onSchedulesChanged,
+                );
               },
             ),
             ...widget.conditionalRuleSets.asMap().entries.map((e) => ListTile(
@@ -667,7 +146,15 @@ class _HomePageState extends State<_HomePage> {
                   title: Text(e.value.name),
                   onTap: () {
                     Navigator.pop(context);
-                    _showRuleSetApplyDialog(e.value);
+                    showRuleSetApplyDialog(
+                      context: context,
+                      ruleSet: e.value,
+                      ruleSetColor: _colorForRuleSet(e.value.name),
+                      slotMinutes: _slotMinutes,
+                      dayStartHour: _dayStartHour,
+                      schedules: _schedules,
+                      onSave: widget.onSchedulesChanged,
+                    );
                   },
                 )),
             ListTile(
@@ -683,7 +170,7 @@ class _HomePageState extends State<_HomePage> {
               title: const Text('오늘 비우기',
                   style: TextStyle(color: Colors.red)),
               onTap: () {
-                _updateSchedules([]);
+                widget.onSchedulesChanged([]);
                 Navigator.pop(context);
               },
             ),
@@ -741,6 +228,22 @@ class _HomePageState extends State<_HomePage> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('색상 이름 설정'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ColorLabelSettingsPage(
+                      colorLabels: widget.colorLabels,
+                      onChanged: widget.onColorLabelsChanged,
+                    ),
+                  ),
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.tune),
               title: const Text('기타 설정'),
               onTap: () {
@@ -771,7 +274,11 @@ class _HomePageState extends State<_HomePage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-          toolbarHeight: 0, elevation: 0, backgroundColor: Colors.white),
+        toolbarHeight: 48,
+        elevation: 0,
+        backgroundColor: Colors.white,
+        title: _buildDateNavigator(),
+      ),
       body: _buildTimeline(),
       floatingActionButton: FloatingActionButton(
         onPressed: _showMainMenu,
@@ -780,6 +287,83 @@ class _HomePageState extends State<_HomePage> {
     );
   }
 
+  // ── 날짜 네비게이터 ───────────────────────────────────────────
+  Widget _buildDateNavigator() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left, size: 22),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          onPressed: () => widget.onDateChanged(
+              widget.selectedDate.subtract(const Duration(days: 1))),
+        ),
+        GestureDetector(
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: widget.selectedDate,
+              firstDate: DateTime(2020),
+              lastDate: DateTime(2099),
+            );
+            if (picked != null) widget.onDateChanged(picked);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: _isToday ? Colors.blue.shade50 : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _dateLabel(),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: _isToday ? Colors.blue.shade700 : Colors.black87,
+                  ),
+                ),
+                if (!_isToday) ...[
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => widget.onDateChanged(
+                      DateTime(DateTime.now().year, DateTime.now().month,
+                          DateTime.now().day),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text('오늘',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.chevron_right, size: 22),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          onPressed: () => widget.onDateChanged(
+              widget.selectedDate.add(const Duration(days: 1))),
+        ),
+      ],
+    );
+  }
+
+  // ── 타임라인 ──────────────────────────────────────────────────
   Widget _buildTimeline() {
     final totalSlots = _totalSlots;
     final totalHeight = totalSlots * slotHeight;
@@ -792,7 +376,7 @@ class _HomePageState extends State<_HomePage> {
           children: [
             _buildGrid(totalSlots),
             ..._buildScheduleBlocks(),
-            _buildCurrentTimeLine(totalSlots),
+            if (_isToday) _buildCurrentTimeLine(totalSlots),
           ],
         ),
       ),
@@ -854,13 +438,19 @@ class _HomePageState extends State<_HomePage> {
         right: 4,
         height: height,
         child: GestureDetector(
-          onTap: () => _showItemMenu(item),
+          onTap: () => showItemMenu(
+            context: context,
+            item: item,
+            schedules: _schedules,
+            onSave: widget.onSchedulesChanged,
+          ),
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 1),
             decoration: BoxDecoration(
               color: item.color,
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: item.color.withValues(alpha: 0.9), width: 1),
+              border:
+                  Border.all(color: item.color.withValues(alpha: 0.9), width: 1),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Text(

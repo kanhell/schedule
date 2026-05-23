@@ -1,7 +1,12 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models.dart';
 import '../utils.dart';
+import '../widgets/donut_chart.dart';
+import '../time_goal.dart';
+
+// ─────────────────────────────────────────
+// 분석 페이지
+// ─────────────────────────────────────────
 
 class AnalysisPage extends StatefulWidget {
   final List<ScheduleItem> schedules;
@@ -22,7 +27,9 @@ class AnalysisPage extends StatefulWidget {
 }
 
 class _AnalysisPageState extends State<AnalysisPage> {
-  // 색상별 총 시간(분) 계산
+  final List<TimeGoal> _goals = [];
+
+  // ── 색상별 총 시간(분) 계산 ──
   Map<Color, int> _calcMinutesByColor() {
     final map = <Color, int>{};
     for (final item in widget.schedules) {
@@ -32,87 +39,12 @@ class _AnalysisPageState extends State<AnalysisPage> {
     return map;
   }
 
-  // Color → ColorLabel 이름 찾기
   String _labelName(Color c) {
     try {
       return widget.colorLabels.firstWhere((l) => l.color == c).name;
     } catch (_) {
       return '기타';
     }
-  }
-
-  // 색상 이름 편집 다이얼로그
-  void _editColorLabels() async {
-    final controllers = widget.colorLabels
-        .map((l) => TextEditingController(text: l.name))
-        .toList();
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('색상 이름 설정',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(widget.colorLabels.length, (i) {
-              final label = widget.colorLabels[i];
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: label.color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                            color: Colors.black12, width: 1),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: controllers[i],
-                        decoration: InputDecoration(
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('취소')),
-          ElevatedButton(
-            onPressed: () {
-              final updated = List.generate(
-                widget.colorLabels.length,
-                (i) => widget.colorLabels[i].copyWith(
-                  name: controllers[i].text.trim().isEmpty
-                      ? widget.colorLabels[i].name
-                      : controllers[i].text.trim(),
-                ),
-              );
-              widget.onColorLabelsChanged(updated);
-              Navigator.pop(ctx);
-            },
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
   }
 
   String _formatMinutes(int minutes) {
@@ -124,23 +56,249 @@ class _AnalysisPageState extends State<AnalysisPage> {
     return '$m분';
   }
 
+  // ── 목표 달성 여부 ──
+  bool _isGoalAchieved(TimeGoal goal, Map<Color, int> minutesByColor) {
+    final actual = minutesByColor[goal.color] ?? 0;
+    return goal.type == GoalType.atLeast
+        ? actual >= goal.targetMinutes
+        : actual < goal.targetMinutes;
+  }
+
+  // ── 목표 추가/수정 다이얼로그 ──
+  void _showGoalDialog({TimeGoal? editing}) async {
+    GoalType goalType = editing?.type ?? GoalType.atLeast;
+    Color selectedColor = editing?.color ?? kUserPaletteColors[0];
+    int targetMinutes = editing?.targetMinutes ?? 60;
+    List<int> resetDays = List.from(editing?.resetDays ?? []);
+
+    const dayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(editing == null ? '목표 추가' : '목표 수정',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── 목표 유형 ──
+                  const Text('목표 유형',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GoalTypeChip(
+                          label: 'n시간 달성',
+                          icon: Icons.check_circle_outline,
+                          selected: goalType == GoalType.atLeast,
+                          color: Colors.green,
+                          onTap: () =>
+                              setDlgState(() => goalType = GoalType.atLeast),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GoalTypeChip(
+                          label: 'n시간 미만',
+                          icon: Icons.do_not_disturb_alt_outlined,
+                          selected: goalType == GoalType.lessThan,
+                          color: Colors.orange,
+                          onTap: () =>
+                              setDlgState(() => goalType = GoalType.lessThan),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+
+                  // ── 색상 선택 ──
+                  const Text('색상',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: List.generate(kUserPaletteColors.length, (ci) {
+                      final c = kUserPaletteColors[ci];
+                      final isSelected = selectedColor == c;
+                      return GestureDetector(
+                        onTap: () => setDlgState(() => selectedColor = c),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: isSelected
+                                ? Border.all(color: Colors.black54, width: 2.5)
+                                : Border.all(
+                                    color: Colors.transparent, width: 2.5),
+                          ),
+                          child: isSelected
+                              ? const Icon(Icons.check,
+                                  size: 14, color: Colors.black54)
+                              : null,
+                        ),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // ── 목표 시간 (30분 단위) ──
+                  const Text('목표 시간',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: targetMinutes > 30
+                            ? () => setDlgState(() => targetMinutes -= 30)
+                            : null,
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: Colors.blue,
+                      ),
+                      SizedBox(
+                        width: 90,
+                        child: Center(
+                          child: Text(
+                            _formatMinutes(targetMinutes),
+                            style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () =>
+                            setDlgState(() => targetMinutes += 30),
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: Colors.blue,
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [30, 60, 90, 120].map((val) {
+                      return OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          shape: const StadiumBorder(),
+                          side: const BorderSide(color: Colors.blue),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () =>
+                            setDlgState(() => targetMinutes = val),
+                        child: Text(_formatMinutes(val),
+                            style: const TextStyle(fontSize: 11)),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // ── 초기화 요일 ──
+                  const Text('초기화 요일',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 4),
+                  Text(
+                    resetDays.isEmpty ? '매일 초기화' : '선택한 요일에 초기화',
+                    style:
+                        const TextStyle(fontSize: 11, color: Colors.blueGrey),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    children: List.generate(7, (i) {
+                      final selected = resetDays.contains(i);
+                      return FilterChip(
+                        label: Text(dayLabels[i]),
+                        selected: selected,
+                        selectedColor: Colors.blue.shade100,
+                        checkmarkColor: Colors.blue,
+                        onSelected: (on) {
+                          setDlgState(() {
+                            if (on) {
+                              resetDays.add(i);
+                            } else {
+                              resetDays.remove(i);
+                            }
+                          });
+                        },
+                        labelStyle: TextStyle(
+                          fontSize: 12,
+                          color: selected ? Colors.blue : Colors.black87,
+                        ),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 4),
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('취소')),
+              ElevatedButton(
+                onPressed: () {
+                  final goal = TimeGoal(
+                    id: editing?.id ??
+                        DateTime.now().millisecondsSinceEpoch.toString(),
+                    type: goalType,
+                    color: selectedColor,
+                    targetMinutes: targetMinutes,
+                    resetDays: resetDays,
+                  );
+                  setState(() {
+                    if (editing != null) {
+                      final idx =
+                          _goals.indexWhere((g) => g.id == editing.id);
+                      if (idx >= 0) _goals[idx] = goal;
+                    } else {
+                      _goals.add(goal);
+                    }
+                  });
+                  Navigator.pop(ctx);
+                },
+                child: const Text('저장'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _deleteGoal(String id) {
+    setState(() => _goals.removeWhere((g) => g.id == id));
+  }
+
   @override
   Widget build(BuildContext context) {
     final minutesByColor = _calcMinutesByColor();
-    final totalMinutes =
-        minutesByColor.values.fold(0, (a, b) => a + b);
+    final totalMinutes = minutesByColor.values.fold(0, (a, b) => a + b);
 
-    // 팔레트 순서대로 정렬된 집계 (0분짜리도 포함)
     final entries = widget.colorLabels.map((label) {
       final minutes = minutesByColor[label.color] ?? 0;
-      return _ColorStat(
+      return ColorStat(
         label: label,
         minutes: minutes,
         ratio: totalMinutes > 0 ? minutes / totalMinutes : 0,
       );
     }).toList();
 
-    // 실제 기록된 색상만 (기타 포함)
     final usedEntries = entries.where((e) => e.minutes > 0).toList()
       ..sort((a, b) => b.minutes.compareTo(a.minutes));
 
@@ -152,29 +310,24 @@ class _AnalysisPageState extends State<AnalysisPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: Colors.black87,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: '색상 이름 설정',
-            onPressed: _editColorLabels,
-          ),
-        ],
       ),
-      body: widget.schedules.isEmpty
+      body: widget.schedules.isEmpty && _goals.isEmpty
           ? _buildEmpty()
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // ── 원형 차트 카드 ──────────────────────────
-                _buildDonutCard(usedEntries, totalMinutes),
-                const SizedBox(height: 16),
-                // ── 색상별 상세 리스트 ──────────────────────
-                _buildDetailCard(usedEntries, totalMinutes),
-                const SizedBox(height: 16),
-                // ── 색상 이름 범례 ──────────────────────────
-                _buildLegendCard(),
+                if (widget.schedules.isNotEmpty) ...[
+                  _buildDonutCard(usedEntries, totalMinutes),
+                  const SizedBox(height: 16),
+                ],
+                _buildGoalsCard(minutesByColor),
               ],
             ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showGoalDialog(),
+        tooltip: '목표 추가',
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
@@ -183,16 +336,15 @@ class _AnalysisPageState extends State<AnalysisPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.bar_chart_outlined,
-              size: 72, color: Colors.grey.shade300),
+          Icon(Icons.bar_chart_outlined, size: 72, color: Colors.grey.shade300),
           const SizedBox(height: 16),
-          Text('오늘 일정이 없습니다.',
+          Text('아직 데이터가 없습니다.',
               style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
                   color: Colors.grey.shade500)),
           const SizedBox(height: 6),
-          Text('홈에서 일정을 추가하면\n색상별 시간이 여기에 표시됩니다.',
+          Text('홈에서 일정을 추가하거나\n+ 버튼으로 목표를 설정해보세요.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
         ],
@@ -200,8 +352,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  Widget _buildDonutCard(
-      List<_ColorStat> usedEntries, int totalMinutes) {
+  Widget _buildDonutCard(List<ColorStat> usedEntries, int totalMinutes) {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -211,8 +362,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
         child: Column(
           children: [
             const Text('오늘 시간 분포',
-                style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 20),
             SizedBox(
               width: 200,
@@ -222,7 +372,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 children: [
                   CustomPaint(
                     size: const Size(200, 200),
-                    painter: _DonutPainter(usedEntries),
+                    painter: DonutPainter(usedEntries),
                   ),
                   Column(
                     mainAxisSize: MainAxisSize.min,
@@ -235,18 +385,16 @@ class _AnalysisPageState extends State<AnalysisPage> {
                             color: Colors.black87),
                       ),
                       const Text('총 시간',
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.grey)),
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            // 범례 칩
             Wrap(
-              spacing: 8,
-              runSpacing: 6,
+              spacing: 10,
+              runSpacing: 8,
               alignment: WrapAlignment.center,
               children: usedEntries.map((e) {
                 final pct = (e.ratio * 100).round();
@@ -260,9 +408,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
                           color: e.label.color, shape: BoxShape.circle),
                     ),
                     const SizedBox(width: 4),
-                    Text('${e.label.name} $pct%',
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.black87)),
+                    Text(
+                      '${e.label.name} ${_formatMinutes(e.minutes)} ($pct%)',
+                      style: const TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
                   ],
                 );
               }).toList(),
@@ -273,76 +422,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  Widget _buildDetailCard(
-      List<_ColorStat> usedEntries, int totalMinutes) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('색상별 시간',
-                style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-            const SizedBox(height: 16),
-            ...usedEntries.map((e) => _buildStatRow(e, totalMinutes)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatRow(_ColorStat e, int totalMinutes) {
-    final pct = totalMinutes > 0
-        ? (e.minutes / totalMinutes * 100).round()
-        : 0;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                    color: e.label.color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(e.label.name,
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w500)),
-              ),
-              Text(_formatMinutes(e.minutes),
-                  style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.bold)),
-              const SizedBox(width: 6),
-              Text('$pct%',
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.grey)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: e.ratio,
-              minHeight: 8,
-              backgroundColor: Colors.grey.shade100,
-              valueColor: AlwaysStoppedAnimation<Color>(e.label.color),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLegendCard() {
+  Widget _buildGoalsCard(Map<Color, int> minutesByColor) {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -355,119 +435,176 @@ class _AnalysisPageState extends State<AnalysisPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('색상 이름',
+                const Text('목표',
                     style: TextStyle(
                         fontWeight: FontWeight.bold, fontSize: 15)),
-                TextButton.icon(
-                  onPressed: _editColorLabels,
-                  icon: const Icon(Icons.edit, size: 14),
-                  label: const Text('편집', style: TextStyle(fontSize: 13)),
-                  style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4)),
-                ),
+                Text('${_goals.length}개',
+                    style: const TextStyle(fontSize: 13, color: Colors.grey)),
               ],
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 10,
-              children: widget.colorLabels.map((label) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: label.color,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.black12),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(label.name,
-                        style: const TextStyle(fontSize: 13)),
-                  ],
-                );
-              }).toList(),
-            ),
+            if (_goals.isEmpty) ...[
+              const SizedBox(height: 16),
+              Center(
+                child: Text(
+                  '+ 버튼으로 목표를 추가해보세요.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+                ),
+              ),
+              const SizedBox(height: 4),
+            ] else ...[
+              const SizedBox(height: 12),
+              ..._goals.map((goal) => _buildGoalRow(goal, minutesByColor)),
+            ],
           ],
         ),
       ),
     );
   }
-}
 
-// ─── 데이터 클래스 ────────────────────────────────────────────
-class _ColorStat {
-  final ColorLabel label;
-  final int minutes;
-  final double ratio;
-  const _ColorStat(
-      {required this.label,
-      required this.minutes,
-      required this.ratio});
-}
+  Widget _buildGoalRow(TimeGoal goal, Map<Color, int> minutesByColor) {
+    final actual = minutesByColor[goal.color] ?? 0;
+    final achieved = _isGoalAchieved(goal, minutesByColor);
+    final isAtLeast = goal.type == GoalType.atLeast;
 
-// ─── 도넛 차트 ────────────────────────────────────────────────
-class _DonutPainter extends CustomPainter {
-  final List<_ColorStat> entries;
-  _DonutPainter(this.entries);
+    final progress = (actual / goal.targetMinutes).clamp(0.0, 1.0);
+    final typeColor = isAtLeast ? Colors.green : Colors.orange;
+    final typeLabel = isAtLeast ? '달성' : '미만';
+    final typeIcon =
+        isAtLeast ? Icons.check_circle_outline : Icons.do_not_disturb_alt_outlined;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final outerR = size.width / 2;
-    final innerR = outerR * 0.58;
-    const gapAngle = 0.03; // 조각 사이 간격 (라디안)
+    const dayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+    final resetLabel = goal.resetDays.isEmpty
+        ? '매일'
+        : goal.resetDays.map((d) => dayLabels[d]).join('·');
 
-    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: outerR);
-    double startAngle = -math.pi / 2;
+    final labelName = _labelName(goal.color);
 
-    if (entries.isEmpty) {
-      final paint = Paint()
-        ..color = Colors.grey.shade200
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = outerR - innerR;
-      canvas.drawCircle(Offset(cx, cy), (outerR + innerR) / 2, paint);
-      return;
-    }
-
-    for (final e in entries) {
-      final sweepAngle = e.ratio * 2 * math.pi - gapAngle;
-      if (sweepAngle <= 0) {
-        startAngle += e.ratio * 2 * math.pi;
-        continue;
-      }
-      final paint = Paint()
-        ..color = e.label.color
-        ..style = PaintingStyle.fill;
-
-      final path = Path()
-        ..moveTo(
-          cx + innerR * math.cos(startAngle + gapAngle / 2),
-          cy + innerR * math.sin(startAngle + gapAngle / 2),
-        )
-        ..arcTo(rect, startAngle + gapAngle / 2, sweepAngle, false)
-        ..lineTo(
-          cx + innerR * math.cos(startAngle + gapAngle / 2 + sweepAngle),
-          cy + innerR * math.sin(startAngle + gapAngle / 2 + sweepAngle),
-        )
-        ..arcTo(
-          Rect.fromCircle(center: Offset(cx, cy), radius: innerR),
-          startAngle + gapAngle / 2 + sweepAngle,
-          -sweepAngle,
-          false,
-        )
-        ..close();
-
-      canvas.drawPath(path, paint);
-      startAngle += e.ratio * 2 * math.pi;
-    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: GestureDetector(
+        onTap: () => _showGoalDialog(editing: goal),
+        onLongPress: () => _showDeleteConfirm(goal),
+        child: Container(
+          decoration: BoxDecoration(
+            color: achieved
+                ? typeColor.withValues(alpha: 0.06)
+                : Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: achieved
+                  ? typeColor.withValues(alpha: 0.3)
+                  : Colors.grey.shade200,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                        color: goal.color, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(labelName,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: typeColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(typeIcon, size: 11, color: typeColor),
+                        const SizedBox(width: 3),
+                        Text(typeLabel,
+                            style: TextStyle(
+                                fontSize: 10,
+                                color: typeColor,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    achieved ? Icons.emoji_events : Icons.hourglass_top,
+                    size: 18,
+                    color: achieved ? typeColor : Colors.grey.shade400,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value:
+                      isAtLeast ? progress : (1.0 - progress).clamp(0.0, 1.0),
+                  minHeight: 7,
+                  backgroundColor: Colors.grey.shade100,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    achieved ? typeColor : typeColor.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    isAtLeast
+                        ? '${_formatMinutes(actual)} / ${_formatMinutes(goal.targetMinutes)}'
+                        : '현재 ${_formatMinutes(actual)}  목표 ${_formatMinutes(goal.targetMinutes)} 미만',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: achieved ? typeColor : Colors.black54,
+                        fontWeight: FontWeight.w500),
+                  ),
+                  Row(
+                    children: [
+                      Icon(Icons.refresh,
+                          size: 11, color: Colors.grey.shade400),
+                      const SizedBox(width: 2),
+                      Text(resetLabel,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade400)),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
-  @override
-  bool shouldRepaint(_DonutPainter old) => old.entries != entries;
+  void _showDeleteConfirm(TimeGoal goal) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('목표 삭제'),
+        content: const Text('이 목표를 삭제할까요?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              _deleteGoal(goal.id);
+              Navigator.pop(ctx);
+            },
+            child: const Text('삭제', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
 }
