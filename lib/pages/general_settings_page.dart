@@ -18,6 +18,7 @@ class GeneralSettingsPage extends StatefulWidget {
 class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   late int _slotMinutes;
   late int _dayBoundaryHour;
+  late int _defaultStartHour;
 
   final List<int> _slotOptions = [5, 10, 15, 30];
 
@@ -26,12 +27,14 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     super.initState();
     _slotMinutes = widget.settings.slotMinutes;
     _dayBoundaryHour = widget.settings.dayBoundaryHour;
+    _defaultStartHour = widget.settings.defaultStartHour;
   }
 
   void _saveAndPop() {
     widget.onChanged(TimeSettings(
       slotMinutes: _slotMinutes,
       dayBoundaryHour: _dayBoundaryHour,
+      defaultStartHour: _defaultStartHour,
     ));
     Navigator.pop(context);
   }
@@ -65,7 +68,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                             fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 4),
                     const Text('타임라인 한 칸의 시간 간격',
-                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        style:
+                            TextStyle(fontSize: 12, color: Colors.grey)),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
@@ -86,6 +90,31 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       '(하루 ${((24 * 60) / _slotMinutes).toInt()}칸)',
                       style: const TextStyle(
                           fontSize: 12, color: Colors.blueGrey),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border:
+                            Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 14, color: Colors.orange),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '최소 시간 단위를 변경해도 기존 일정의 시각은 유지됩니다.',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.orange),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -109,7 +138,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                     const SizedBox(height: 4),
                     const Text(
                       '이 시각 이전(새벽)의 일정은 전날의 연속으로 표시됩니다.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -117,10 +147,12 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       children: [
                         IconButton(
                           onPressed: _dayBoundaryHour > 0
-                              ? () => setState(() => _dayBoundaryHour--)
+                              ? () => setState(
+                                  () => _dayBoundaryHour--)
                               : null,
                           icon: const Icon(
-                              Icons.keyboard_arrow_down_rounded, size: 28),
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 28),
                           color: Colors.blue,
                           disabledColor: Colors.grey.shade300,
                         ),
@@ -139,10 +171,12 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                         ),
                         IconButton(
                           onPressed: _dayBoundaryHour < 12
-                              ? () => setState(() => _dayBoundaryHour++)
+                              ? () => setState(
+                                  () => _dayBoundaryHour++)
                               : null,
                           icon: const Icon(
-                              Icons.keyboard_arrow_up_rounded, size: 28),
+                              Icons.keyboard_arrow_up_rounded,
+                              size: 28),
                           color: Colors.blue,
                           disabledColor: Colors.grey.shade300,
                         ),
@@ -177,28 +211,70 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // 안내
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded,
-                      size: 16, color: Colors.orange),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '최소 시간 단위를 변경하면 오늘 추가된 일정이 초기화됩니다.',
-                      style: TextStyle(fontSize: 12, color: Colors.orange),
+            // ── 일정 추가 기본 시작 시간 ──
+            Card(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('일정 추가 기본 시작 시간',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '오늘 일정이 없을 때 새 일정 추가 다이얼로그의 기본 시작 시각입니다.\n'
+                      '일정이 있으면 마지막 일정 종료 시각으로 자동 설정됩니다.',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          onPressed: _defaultStartHour > 0
+                              ? () => setState(
+                                  () => _defaultStartHour--)
+                              : null,
+                          icon: const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 28),
+                          color: Colors.blue,
+                          disabledColor: Colors.grey.shade300,
+                        ),
+                        SizedBox(
+                          width: 80,
+                          child: Center(
+                            child: Text(
+                              '오전 $_defaultStartHour시',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _defaultStartHour < 23
+                              ? () => setState(
+                                  () => _defaultStartHour++)
+                              : null,
+                          icon: const Icon(
+                              Icons.keyboard_arrow_up_rounded,
+                              size: 28),
+                          color: Colors.blue,
+                          disabledColor: Colors.grey.shade300,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
 

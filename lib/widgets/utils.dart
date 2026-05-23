@@ -29,26 +29,40 @@ const List<String> kUserPaletteLabels = [
   '파랑', '초록', '주황', '보라', '노랑', '빨강',
 ];
 
-Color ruleSetColor(int index) => kRuleSetColors[index % kRuleSetColors.length];
+Color ruleSetColor(int index) =>
+    kRuleSetColors[index % kRuleSetColors.length];
 
 // ─────────────────────────────────────────
 // 유틸 함수
 // ─────────────────────────────────────────
 
-/// slotMinutes 단위로 반올림
+/// slotMinutes 단위로 TimeOfDay 반올림
 TimeOfDay roundToNearestSlot(TimeOfDay t, int slotMinutes) {
   final totalMinutes = t.hour * 60 + t.minute;
   final half = slotMinutes ~/ 2;
-  final rounded = ((totalMinutes + half) ~/ slotMinutes) * slotMinutes;
-  return TimeOfDay(hour: (rounded ~/ 60) % 24, minute: rounded % 60);
+  final rounded =
+      ((totalMinutes + half) ~/ slotMinutes) * slotMinutes;
+  return TimeOfDay(
+      hour: (rounded ~/ 60) % 24, minute: rounded % 60);
+}
+
+/// slotMinutes 단위로 분(int) 반올림
+int roundToNearestSlotMinutes(int totalMinutes, int slotMinutes) {
+  final half = slotMinutes ~/ 2;
+  return ((totalMinutes + half) ~/ slotMinutes) * slotMinutes;
 }
 
 /// 하위 호환 (10분 고정)
-TimeOfDay roundToNearest10(TimeOfDay t) => roundToNearestSlot(t, 10);
+TimeOfDay roundToNearest10(TimeOfDay t) =>
+    roundToNearestSlot(t, 10);
 
-String formatSlotTime(int slot, int slotMinutes) {
-  final totalMinutes = slot * slotMinutes;
-  final h = totalMinutes ~/ 60;
+String formatMinuteTime(int totalMinutes) {
+  final h = (totalMinutes ~/ 60) % 24;
   final m = totalMinutes % 60;
   return '$h시 ${m.toString().padLeft(2, '0')}분';
+}
+
+/// 슬롯 인덱스 기반 포맷 (하위호환용)
+String formatSlotTime(int slot, int slotMinutes) {
+  return formatMinuteTime(slot * slotMinutes);
 }

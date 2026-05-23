@@ -72,7 +72,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
       final date = todayOnly.subtract(Duration(days: i));
       final items = await widget.onLoadSchedulesForDate(date);
       for (final item in items) {
-        final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
+        final minutes = item.durationMinutes;
         byColor[item.color] = (byColor[item.color] ?? 0) + minutes;
       }
     }
@@ -156,7 +156,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     while (!cursor.isAfter(range.end)) {
       final items = await widget.onLoadSchedulesForDate(cursor);
       for (final item in items) {
-        final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
+        final minutes = item.durationMinutes;
         byColor[item.color] = (byColor[item.color] ?? 0) + minutes;
         byTitle[item.title] ??= {};
         byTitle[item.title]![item.color] =
@@ -172,7 +172,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
   Map<Color, int> _calcMinutesByColor() {
     final map = <Color, int>{};
     for (final item in widget.schedules) {
-      final minutes = item.durationSlots * widget.timeSettings.slotMinutes;
+      final minutes = item.durationMinutes;
       map[item.color] = (map[item.color] ?? 0) + minutes;
     }
     return map;

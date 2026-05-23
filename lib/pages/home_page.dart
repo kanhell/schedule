@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../models.dart';
+import '../models.dart';
 import '../widgets/utils.dart';
 import 'routine_settings_page.dart';
 import 'day_schedule_settings_page.dart';
@@ -49,62 +49,74 @@ class _HomePageState extends State<HomePage> {
 
   double get slotHeight => 25.0;
   int get _slotMinutes => widget.timeSettings.slotMinutes;
+  int get _defaultStartHour => widget.timeSettings.defaultStartHour;
   List<ScheduleItem> get _schedules => widget.schedules;
 
   // ── 표시 범위 동적 계산 ───────────────────────────────────────
-  //
-  // 하루 경계(dayBoundaryHour, 기본 5시) 기준:
-  //   • slotOffset = dayBoundaryHour × 60 / slotMinutes
-  //   • 일정의 절대 슬롯이 [0, boundarySlot) 이면 "전날 새벽" → 슬롯에 totalInDay 추가
-  //   • 뷰 범위 = 첫 일정 시작 ~ 마지막 일정 종료, 앞뒤 3슬롯 여백
-  //   • 일정 없으면 현재 시각 기준 ±2시간
   static const int _padding = 3;
 
-  int get _totalInDay     => (24 * 60) ~/ _slotMinutes;
-  int get _boundarySlot   => (widget.timeSettings.dayBoundaryHour * 60) ~/ _slotMinutes;
+  int get _totalInDay => (24 * 60) ~/ _slotMinutes;
+  int get _boundarySlot =>
+      (widget.timeSettings.dayBoundaryHour * 60) ~/ _slotMinutes;
 
-  /// 절대 슬롯을 "경계 기준 슬롯"으로 변환.
-  /// boundary=5시 이면: 0~4시59분 슬롯 → +totalInDay, 5시 이후는 그대로.
+  /// 절대 슬롯을 "경계 기준 슬롯"으로 변환
   int _boundedSlot(int absSlot) {
-    return absSlot < _boundarySlot ? absSlot + _totalInDay : absSlot;
+    return absSlot < _boundarySlot
+        ? absSlot + _totalInDay
+        : absSlot;
+  }
+
+  /// ScheduleItem의 startMinute → 절대 슬롯 → 경계 기준 슬롯
+  int _boundedSlotForItem(ScheduleItem item) {
+    final absSlot = item.startSlot(_slotMinutes);
+    return _boundedSlot(absSlot);
   }
 
   ({int start, int end}) get _viewRange {
     if (_schedules.isEmpty) {
       final now = DateTime.now();
-      final cur = _boundedSlot((now.hour * 60 + now.minute) ~/ _slotMinutes);
+      final cur = _boundedSlot(
+          (now.hour * 60 + now.minute) ~/ _slotMinutes);
       final twoH = 120 ~/ _slotMinutes;
-      return (start: (cur - twoH).clamp(0, _totalInDay * 2),
-              end: (cur + twoH).clamp(0, _totalInDay * 2));
+      return (
+        start: (cur - twoH).clamp(0, _totalInDay * 2),
+        end: (cur + twoH).clamp(0, _totalInDay * 2)
+      );
     }
-    final boundedStarts = _schedules.map((s) => _boundedSlot(s.startSlot));
-    final boundedEnds   = _schedules.map((s) => _boundedSlot(s.startSlot) + s.durationSlots);
+    final boundedStarts =
+        _schedules.map((s) => _boundedSlotForItem(s));
+    final boundedEnds = _schedules.map(
+        (s) => _boundedSlotForItem(s) + s.durationSlots(_slotMinutes));
     final minStart = boundedStarts.reduce((a, b) => a < b ? a : b);
-    final maxEnd   = boundedEnds.reduce((a, b) => a > b ? a : b);
-    return (start: (minStart - _padding).clamp(0, _totalInDay * 2),
-            end: maxEnd + _padding);
+    final maxEnd = boundedEnds.reduce((a, b) => a > b ? a : b);
+    return (
+      start: (minStart - _padding).clamp(0, _totalInDay * 2),
+      end: maxEnd + _padding
+    );
   }
 
   int get _viewStartSlot => _viewRange.start;
-  int get _totalSlots    => _viewRange.end - _viewRange.start;
+  int get _totalSlots => _viewRange.end - _viewRange.start;
 
-  /// 일정 블록의 뷰 내 상대 슬롯 (top 위치 계산용)
   int _relativeSlotFor(ScheduleItem item) =>
-      _boundedSlot(item.startSlot) - _viewStartSlot;
+      _boundedSlotForItem(item) - _viewStartSlot;
 
-  int get _dayStartHour => (_viewStartSlot * _slotMinutes) ~/ 60;
+  int get _dayStartHour =>
+      (_viewStartSlot * _slotMinutes) ~/ 60;
 
-  // ── 오늘 기준 판단 ──
   bool get _isToday {
     final now = DateTime.now();
     final d = widget.selectedDate;
-    return d.year == now.year && d.month == now.month && d.day == now.day;
+    return d.year == now.year &&
+        d.month == now.month &&
+        d.day == now.day;
   }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrentTime());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _scrollToCurrentTime());
   }
 
   @override
@@ -112,40 +124,44 @@ class _HomePageState extends State<HomePage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.timeSettings != widget.timeSettings ||
         oldWidget.selectedDate != widget.selectedDate) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrentTime());
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _scrollToCurrentTime());
     }
   }
 
   void _scrollToCurrentTime() {
     final now = DateTime.now();
-    final currentSlot = (now.hour * 60 + now.minute) ~/ _slotMinutes;
+    final currentSlot =
+        (now.hour * 60 + now.minute) ~/ _slotMinutes;
     final relativeSlot = currentSlot - _viewStartSlot;
     final scrollPosition = (relativeSlot * slotHeight) - 200;
     if (_scrollController.hasClients) {
-      _scrollController.jumpTo(
-          scrollPosition.clamp(0.0, _scrollController.position.maxScrollExtent));
+      _scrollController.jumpTo(scrollPosition.clamp(
+          0.0, _scrollController.position.maxScrollExtent));
     }
   }
 
   double get _currentTimeRelativeOffset {
     final now = DateTime.now();
-    final currentSlot = (now.hour * 60 + now.minute) / _slotMinutes;
+    final currentSlot =
+        (now.hour * 60 + now.minute) / _slotMinutes;
     return (currentSlot - _viewStartSlot) * slotHeight;
   }
 
   Color _colorForRuleSet(String ruleSetName) {
-    final idx = widget.conditionalRuleSets.indexWhere((r) => r.name == ruleSetName);
+    final idx = widget.conditionalRuleSets
+        .indexWhere((r) => r.name == ruleSetName);
     if (idx < 0) return ruleSetColor(0);
     return widget.conditionalRuleSets[idx].color ?? ruleSetColor(idx);
   }
 
-  // ── 날짜 표시 문자열 ──────────────────────────────────────────
   String _getDate() {
     final d = widget.selectedDate;
     const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
     final wd = weekdays[d.weekday - 1];
     return '${d.month}/${d.day} $wd';
   }
+
   String _dateLabel() {
     final d = widget.selectedDate;
     final now = DateTime.now();
@@ -165,7 +181,8 @@ class _HomePageState extends State<HomePage> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => SafeArea(
         child: Wrap(
           children: [
@@ -178,28 +195,35 @@ class _HomePageState extends State<HomePage> {
                   context: context,
                   slotMinutes: _slotMinutes,
                   dayStartHour: _dayStartHour,
+                  defaultStartHour: _defaultStartHour,
                   schedules: _schedules,
                   onSave: widget.onSchedulesChanged,
                 );
               },
             ),
-            ...widget.conditionalRuleSets.asMap().entries.map((e) => ListTile(
-                  leading: Icon(Icons.auto_awesome,
-                      color: e.value.color ?? ruleSetColor(e.key)),
-                  title: Text(e.value.name),
-                  onTap: () {
-                    Navigator.pop(context);
-                    showRuleSetApplyDialog(
-                      context: context,
-                      ruleSet: e.value,
-                      ruleSetColor: _colorForRuleSet(e.value.name),
-                      slotMinutes: _slotMinutes,
-                      dayStartHour: _dayStartHour,
-                      schedules: _schedules,
-                      onSave: widget.onSchedulesChanged,
-                    );
-                  },
-                )),
+            ...widget.conditionalRuleSets
+                .asMap()
+                .entries
+                .map((e) => ListTile(
+                      leading: Icon(Icons.auto_awesome,
+                          color:
+                              e.value.color ?? ruleSetColor(e.key)),
+                      title: Text(e.value.name),
+                      onTap: () {
+                        Navigator.pop(context);
+                        showRuleSetApplyDialog(
+                          context: context,
+                          ruleSet: e.value,
+                          ruleSetColor:
+                              _colorForRuleSet(e.value.name),
+                          slotMinutes: _slotMinutes,
+                          dayStartHour: _dayStartHour,
+                          defaultStartHour: _defaultStartHour,
+                          schedules: _schedules,
+                          onSave: widget.onSchedulesChanged,
+                        );
+                      },
+                    )),
             ListTile(
               leading: const Icon(Icons.settings),
               title: const Text('설정'),
@@ -209,7 +233,8 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              leading: const Icon(Icons.delete_outline,
+                  color: Colors.red),
               title: const Text('오늘 비우기',
                   style: TextStyle(color: Colors.red)),
               onTap: () {
@@ -228,14 +253,16 @@ class _HomePageState extends State<HomePage> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => SafeArea(
         child: Wrap(
           children: [
             const Padding(
               padding: EdgeInsets.all(16.0),
               child: Text('설정',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
             ),
             ListTile(
               leading: const Icon(Icons.auto_awesome),
@@ -299,10 +326,6 @@ class _HomePageState extends State<HomePage> {
                     builder: (_) => GeneralSettingsPage(
                       settings: widget.timeSettings,
                       onChanged: (updated) {
-                        // slotMinutes 가 바뀌면 슬롯 인덱스 불일치 → 일정 초기화
-                        if (updated.slotMinutes != widget.timeSettings.slotMinutes) {
-                          widget.onSchedulesChanged([]);
-                        }
                         widget.onTimeSettingsChanged(updated);
                       },
                     ),
@@ -336,7 +359,8 @@ class _HomePageState extends State<HomePage> {
                       DateTime.now().day),
                 ),
                 icon: const Icon(Icons.today, size: 16),
-                label: const Text('오늘', style: TextStyle(fontSize: 13)),
+                label:
+                    const Text('오늘', style: TextStyle(fontSize: 13)),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.blue,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -361,7 +385,8 @@ class _HomePageState extends State<HomePage> {
         IconButton(
           icon: const Icon(Icons.chevron_left, size: 22),
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          constraints:
+              const BoxConstraints(minWidth: 32, minHeight: 32),
           onPressed: () => widget.onDateChanged(
               widget.selectedDate.subtract(const Duration(days: 1))),
         ),
@@ -376,9 +401,12 @@ class _HomePageState extends State<HomePage> {
             if (picked != null) widget.onDateChanged(picked);
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: _isToday ? Colors.blue.shade50 : Colors.grey.shade100,
+              color: _isToday
+                  ? Colors.blue.shade50
+                  : Colors.grey.shade100,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -389,31 +417,34 @@ class _HomePageState extends State<HomePage> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: _isToday ? Colors.blue.shade700 : Colors.black87,
+                    color: _isToday
+                        ? Colors.blue.shade700
+                        : Colors.black87,
                   ),
                 ),
                 const SizedBox(width: 6),
                 if (!_isToday)
-                GestureDetector(
-                  onTap: () => widget.onDateChanged(
-                    DateTime(DateTime.now().year, DateTime.now().month,
-                        DateTime.now().day),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.blue,
-                      borderRadius: BorderRadius.circular(10),
+                  GestureDetector(
+                    onTap: () => widget.onDateChanged(
+                      DateTime(DateTime.now().year, DateTime.now().month,
+                          DateTime.now().day),
                     ),
-                    child: Text(
-                      _dateLabel(),
-                        style: TextStyle(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _dateLabel(),
+                        style: const TextStyle(
                             fontSize: 10,
                             color: Colors.white,
-                            fontWeight: FontWeight.bold)),
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -421,7 +452,8 @@ class _HomePageState extends State<HomePage> {
         IconButton(
           icon: const Icon(Icons.chevron_right, size: 22),
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          constraints:
+              const BoxConstraints(minWidth: 32, minHeight: 32),
           onPressed: () => widget.onDateChanged(
               widget.selectedDate.add(const Duration(days: 1))),
         ),
@@ -452,7 +484,8 @@ class _HomePageState extends State<HomePage> {
   Widget _buildGrid(int totalSlots) {
     return Column(
       children: List.generate(totalSlots, (i) {
-        final absoluteMinutes = (_viewStartSlot + i) * _slotMinutes;
+        final absoluteMinutes =
+            (_viewStartSlot + i) * _slotMinutes;
         final hour = (absoluteMinutes ~/ 60) % 24;
         final minute = absoluteMinutes % 60;
         final isOnTheHour = minute == 0;
@@ -496,7 +529,7 @@ class _HomePageState extends State<HomePage> {
   List<Widget> _buildScheduleBlocks() {
     return _schedules.map((item) {
       final top = _relativeSlotFor(item) * slotHeight;
-      final height = item.durationSlots * slotHeight;
+      final height = item.durationSlots(_slotMinutes) * slotHeight;
 
       return Positioned(
         top: top,
@@ -515,13 +548,15 @@ class _HomePageState extends State<HomePage> {
             decoration: BoxDecoration(
               color: item.color,
               borderRadius: BorderRadius.circular(4),
-              border:
-                  Border.all(color: item.color.withValues(alpha: 0.9), width: 1),
+              border: Border.all(
+                  color: item.color.withValues(alpha: 0.9), width: 1),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Text(
               item.title,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w500),
               softWrap: true,
               overflow: TextOverflow.visible,
             ),
@@ -533,7 +568,9 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildCurrentTimeLine(int totalSlots) {
     final top = _currentTimeRelativeOffset;
-    if (top < 0 || top > totalSlots * slotHeight) return const SizedBox.shrink();
+    if (top < 0 || top > totalSlots * slotHeight) {
+      return const SizedBox.shrink();
+    }
     return Positioned(
       top: top,
       left: 0,
@@ -545,10 +582,12 @@ class _HomePageState extends State<HomePage> {
             Container(
               width: 8,
               height: 8,
-              decoration:
-                  const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+              decoration: const BoxDecoration(
+                  color: Colors.red, shape: BoxShape.circle),
             ),
-            Expanded(child: Container(height: 1.5, color: Colors.red)),
+            Expanded(
+                child:
+                    Container(height: 1.5, color: Colors.red)),
           ],
         ),
       ),

@@ -11,58 +11,79 @@ import 'widgets/time_goal.dart';
 //   shared_preferences: ^2.3.0
 
 class AppPersistence {
-  static const _keyTimeSettings  = 'time_settings';
-  static const _keyRuleSets      = 'rule_sets';
-  static const _keyDaySchedules  = 'day_schedules';
-  static const _keyColorLabels   = 'color_labels';
-  static const _keyTimeGoals     = 'time_goals';
-  // 날짜별 일정: 'schedules_YYYY-MM-DD'
+  static const _keyTimeSettings = 'time_settings_v2';
+  static const _keyRuleSets = 'rule_sets_v2';
+  static const _keyDaySchedules = 'day_schedules_v2';
+  static const _keyColorLabels = 'color_labels';
+  static const _keyTimeGoals = 'time_goals';
+  // 날짜별 일정: 'schedules_v2_YYYY-MM-DD'
 
   // ── Color 직렬화 ──────────────────────────────────────────────
-  static int   _colorToInt(Color c) => c.toARGB32();
-  static Color _intToColor(int v)   => Color(v);
+  static int _colorToInt(Color c) => c.toARGB32();
+  static Color _intToColor(int v) => Color(v);
 
-  // ── ScheduleItem ──────────────────────────────────────────────
+  // ── ScheduleItem (분 기준) ────────────────────────────────────
   static Map<String, dynamic> _scheduleItemToJson(ScheduleItem item) => {
         'title': item.title,
-        'startSlot': item.startSlot,
-        'durationSlots': item.durationSlots,
+        'startMinute': item.startMinute,
+        'durationMinutes': item.durationMinutes,
         'color': _colorToInt(item.color),
         if (item.ruleSetName != null) 'ruleSetName': item.ruleSetName,
       };
 
-  static ScheduleItem _scheduleItemFromJson(Map<String, dynamic> j) =>
-      ScheduleItem(
+  static ScheduleItem _scheduleItemFromJson(Map<String, dynamic> j) {
+    // 구버전(슬롯 기반) 호환: startSlot + durationSlots 가 있고 startMinute 없는 경우
+    if (j.containsKey('startMinute')) {
+      return ScheduleItem(
         j['title'] as String,
-        j['startSlot'] as int,
-        j['durationSlots'] as int,
+        j['startMinute'] as int,
+        j['durationMinutes'] as int,
         _intToColor(j['color'] as int),
         ruleSetName: j['ruleSetName'] as String?,
       );
+    } else {
+      // 구버전: slotMinutes 를 알 수 없으므로 10분 단위 가정
+      const legacySlot = 10;
+      final startSlot = j['startSlot'] as int? ?? 0;
+      final durationSlots = j['durationSlots'] as int? ?? 1;
+      return ScheduleItem(
+        j['title'] as String,
+        startSlot * legacySlot,
+        durationSlots * legacySlot,
+        _intToColor(j['color'] as int),
+        ruleSetName: j['ruleSetName'] as String?,
+      );
+    }
+  }
 
   // ── TimeSettings ──────────────────────────────────────────────
   static Map<String, dynamic> _timeSettingsToJson(TimeSettings t) => {
         'slotMinutes': t.slotMinutes,
         'dayBoundaryHour': t.dayBoundaryHour,
+        'defaultStartHour': t.defaultStartHour,
       };
 
   static TimeSettings _timeSettingsFromJson(Map<String, dynamic> j) =>
       TimeSettings(
-        slotMinutes:      j['slotMinutes']      as int,
-        dayBoundaryHour: (j['dayBoundaryHour']  as int?) ?? 5,
+        slotMinutes: j['slotMinutes'] as int,
+        dayBoundaryHour: (j['dayBoundaryHour'] as int?) ?? 5,
+        defaultStartHour: (j['defaultStartHour'] as int?) ?? 8,
       );
 
   // ── ScheduleBlock ─────────────────────────────────────────────
   static Map<String, dynamic> _blockToJson(ScheduleBlock b) => {
-        'title': b.title, 'durationMinutes': b.durationMinutes,
+        'title': b.title,
+        'durationMinutes': b.durationMinutes,
       };
   static ScheduleBlock _blockFromJson(Map<String, dynamic> j) =>
-      ScheduleBlock(title: j['title'] as String,
-                    durationMinutes: j['durationMinutes'] as int);
+      ScheduleBlock(
+          title: j['title'] as String,
+          durationMinutes: j['durationMinutes'] as int);
 
   // ── RoutineOption ─────────────────────────────────────────────
   static Map<String, dynamic> _optionToJson(RoutineOption o) => {
-        'name': o.name, 'blocks': o.blocks.map(_blockToJson).toList(),
+        'name': o.name,
+        'blocks': o.blocks.map(_blockToJson).toList(),
       };
   static RoutineOption _optionFromJson(Map<String, dynamic> j) =>
       RoutineOption(
@@ -77,6 +98,7 @@ class AppPersistence {
         'name': r.name,
         'options': r.options.map(_optionToJson).toList(),
         if (r.color != null) 'color': _colorToInt(r.color!),
+        'singleUsePerDay': r.singleUsePerDay,
       };
   static ConditionalRuleSet _ruleSetFromJson(Map<String, dynamic> j) =>
       ConditionalRuleSet(
@@ -85,29 +107,35 @@ class AppPersistence {
             .map((o) => _optionFromJson(o as Map<String, dynamic>))
             .toList(),
         color: j['color'] != null ? _intToColor(j['color'] as int) : null,
+        singleUsePerDay: (j['singleUsePerDay'] as bool?) ?? false,
       );
 
   // ── ColorLabel ────────────────────────────────────────────────
   static Map<String, dynamic> _colorLabelToJson(ColorLabel cl) =>
       {'color': _colorToInt(cl.color), 'name': cl.name};
   static ColorLabel _colorLabelFromJson(Map<String, dynamic> j) =>
-      ColorLabel(color: _intToColor(j['color'] as int), name: j['name'] as String);
+      ColorLabel(
+          color: _intToColor(j['color'] as int),
+          name: j['name'] as String);
 
   // ── 날짜별 일정 저장/불러오기 ──────────────────────────────────
-  /// key: 'schedules_YYYY-MM-DD'
   static String _schedulesKey(DateTime date) =>
-      'schedules_${_dateString(date)}';
+      'schedules_v2_${_dateString(date)}';
 
   static Future<void> saveSchedulesForDate(
       DateTime date, List<ScheduleItem> items) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        _schedulesKey(date), jsonEncode(items.map(_scheduleItemToJson).toList()));
+    await prefs.setString(_schedulesKey(date),
+        jsonEncode(items.map(_scheduleItemToJson).toList()));
   }
 
-  static Future<List<ScheduleItem>> loadSchedulesForDate(DateTime date) async {
+  static Future<List<ScheduleItem>> loadSchedulesForDate(
+      DateTime date) async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_schedulesKey(date));
+    // 새 키 먼저 시도
+    String? raw = prefs.getString(_schedulesKey(date));
+    // 없으면 구버전 키 시도
+    raw ??= prefs.getString('schedules_${_dateString(date)}');
     if (raw == null) return [];
     final list = jsonDecode(raw) as List;
     return list
@@ -124,21 +152,26 @@ class AppPersistence {
 
   static Future<TimeSettings> loadTimeSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_keyTimeSettings);
+    // 새 키 먼저, 없으면 구버전
+    String? raw = prefs.getString(_keyTimeSettings);
+    raw ??= prefs.getString('time_settings');
     if (raw == null) return const TimeSettings();
     return _timeSettingsFromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
   // ── RuleSets ──────────────────────────────────────────────────
-  static Future<void> saveRuleSets(List<ConditionalRuleSet> ruleSets) async {
+  static Future<void> saveRuleSets(
+      List<ConditionalRuleSet> ruleSets) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        _keyRuleSets, jsonEncode(ruleSets.map(_ruleSetToJson).toList()));
+        _keyRuleSets,
+        jsonEncode(ruleSets.map(_ruleSetToJson).toList()));
   }
 
   static Future<List<ConditionalRuleSet>?> loadRuleSets() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_keyRuleSets);
+    String? raw = prefs.getString(_keyRuleSets);
+    raw ??= prefs.getString('rule_sets');
     if (raw == null) return null;
     final list = jsonDecode(raw) as List;
     return list
@@ -158,30 +191,30 @@ class AppPersistence {
 
   static Future<List<List<ScheduleItem>>> loadDaySchedules() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_keyDaySchedules);
+    String? raw = prefs.getString(_keyDaySchedules);
+    raw ??= prefs.getString('day_schedules');
     if (raw == null) return List.generate(7, (_) => []);
     final outer = jsonDecode(raw) as List;
     return outer
         .map((day) => (day as List)
-            .map((e) => _scheduleItemFromJson(e as Map<String, dynamic>))
+            .map((e) =>
+                _scheduleItemFromJson(e as Map<String, dynamic>))
             .toList())
         .toList();
   }
 
   // ── 색상별 일정 이름 이력 ─────────────────────────────────────
-  // key: 'title_history_RRGGBB' → JSON 배열 (최신순, 최대 30개)
   static String _titleHistoryKey(Color color) =>
       'title_history_${color.toARGB32().toRadixString(16)}';
 
-  /// 일정 저장 시 호출 — 해당 색상의 이름 이력에 추가
   static Future<void> recordTitle(Color color, String title) async {
     if (title.trim().isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
     final key = _titleHistoryKey(color);
     final raw = prefs.getString(key);
-    final List<dynamic> list = raw != null ? jsonDecode(raw) as List : [];
+    final List<dynamic> list =
+        raw != null ? jsonDecode(raw) as List : [];
 
-    // 중복 제거 후 맨 앞에 삽입, 최대 30개 유지
     final titles = list.cast<String>();
     titles.remove(title);
     titles.insert(0, title);
@@ -190,7 +223,6 @@ class AppPersistence {
     await prefs.setString(key, jsonEncode(titles));
   }
 
-  /// 해당 색상의 이름 이력 반환 (최신순)
   static Future<List<String>> loadTitleHistory(Color color) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_titleHistoryKey(color));
@@ -202,7 +234,8 @@ class AppPersistence {
   static Future<void> saveColorLabels(List<ColorLabel> labels) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        _keyColorLabels, jsonEncode(labels.map(_colorLabelToJson).toList()));
+        _keyColorLabels,
+        jsonEncode(labels.map(_colorLabelToJson).toList()));
   }
 
   static Future<List<ColorLabel>?> loadColorLabels() async {
@@ -249,7 +282,8 @@ class AppPersistence {
         resetDays: (j['resetDays'] as List).cast<int>(),
         subGoals: j['subGoals'] != null
             ? (j['subGoals'] as List)
-                .map((s) => _subGoalFromJson(s as Map<String, dynamic>))
+                .map((s) =>
+                    _subGoalFromJson(s as Map<String, dynamic>))
                 .toList()
             : [],
       );
@@ -257,7 +291,8 @@ class AppPersistence {
   static Future<void> saveTimeGoals(List<TimeGoal> goals) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        _keyTimeGoals, jsonEncode(goals.map(_timeGoalToJson).toList()));
+        _keyTimeGoals,
+        jsonEncode(goals.map(_timeGoalToJson).toList()));
   }
 
   static Future<List<TimeGoal>> loadTimeGoals() async {
@@ -270,7 +305,7 @@ class AppPersistence {
         .toList();
   }
 
-  // ── 전체 초기 로딩 (오늘 날짜 기준) ──────────────────────────
+  // ── 전체 초기 로딩 ────────────────────────────────────────────
   static Future<Map<String, dynamic>> loadAll() async {
     final results = await Future.wait([
       loadSchedulesForDate(DateTime.now()),
@@ -281,12 +316,12 @@ class AppPersistence {
       loadTimeGoals(),
     ]);
     return {
-      'schedules':    results[0],
+      'schedules': results[0],
       'timeSettings': results[1],
-      'ruleSets':     results[2],
+      'ruleSets': results[2],
       'daySchedules': results[3],
-      'colorLabels':  results[4],
-      'timeGoals':    results[5],
+      'colorLabels': results[4],
+      'timeGoals': results[5],
     };
   }
 

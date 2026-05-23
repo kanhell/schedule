@@ -7,20 +7,39 @@ import '../persistence.dart';
 // 다이얼로그 / 바텀시트 모음
 // ─────────────────────────────────────────
 
+/// 오늘 일정의 마지막 종료 시각(분)을 반환.
+/// 일정이 없으면 null.
+int? _lastEndMinute(List<ScheduleItem> schedules) {
+  if (schedules.isEmpty) return null;
+  return schedules
+      .map((s) => s.endMinute())
+      .reduce((a, b) => a > b ? a : b);
+}
+
+/// [schedules]의 마지막 종료 시각을 기본 시작 시각으로 사용.
+/// 일정이 없으면 [defaultStartHour]시 0분.
+TimeOfDay _defaultStartTime(
+    List<ScheduleItem> schedules, int defaultStartHour, int slotMinutes) {
+  final lastEnd = _lastEndMinute(schedules);
+  if (lastEnd == null) {
+    return TimeOfDay(hour: defaultStartHour, minute: 0);
+  }
+  final clamped = lastEnd.clamp(0, 23 * 60 + 59);
+  final rounded = roundToNearestSlotMinutes(clamped, slotMinutes);
+  return TimeOfDay(hour: (rounded ~/ 60) % 24, minute: rounded % 60);
+}
+
 /// 직접 일정 추가 다이얼로그.
-///
-/// [slotMinutes]       : 최소 시간 단위(분)
-/// [dayStartHour]      : 표시 시작 시간
-/// [schedules]         : 현재 일정 목록 (겹침 검사용)
-/// [onSave]            : 저장 콜백 — 새 목록을 전달
 Future<void> showManualAddDialog({
   required BuildContext context,
   required int slotMinutes,
   required int dayStartHour,
+  required int defaultStartHour,
   required List<ScheduleItem> schedules,
   required ValueChanged<List<ScheduleItem>> onSave,
 }) async {
-  TimeOfDay selectedTime = roundToNearestSlot(TimeOfDay.now(), slotMinutes);
+  TimeOfDay selectedTime =
+      _defaultStartTime(schedules, defaultStartHour, slotMinutes);
   int duration = 30;
   final titleController = TextEditingController();
   Color selectedColor = kUserPaletteColors[0];
@@ -28,16 +47,11 @@ Future<void> showManualAddDialog({
   String? overlapError;
   List<String> suggestions = [];
 
-  // 절대 슬롯 (0시 기준) — 타임라인도 절대 슬롯 기준으로 표시
-  int minutesToAbsoluteSlot(int hour, int minute) {
-    return (hour * 60 + minute) ~/ slotMinutes;
-  }
-
-  List<ScheduleItem> overlapping(int relSlot, int durationSlots) {
-    final newEnd = relSlot + durationSlots;
+  List<ScheduleItem> overlapping(int startMin, int durMin) {
+    final newEnd = startMin + durMin;
     return schedules.where((s) {
-      final sEnd = s.startSlot + s.durationSlots;
-      return relSlot < sEnd && newEnd > s.startSlot;
+      final sEnd = s.endMinute();
+      return startMin < sEnd && newEnd > s.startMinute;
     }).toList();
   }
 
@@ -45,7 +59,8 @@ Future<void> showManualAddDialog({
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setDialogState) {
-        final startAbsMin = selectedTime.hour * 60 + selectedTime.minute;
+        final startAbsMin =
+            selectedTime.hour * 60 + selectedTime.minute;
         final endAbsMin = startAbsMin + duration;
         final endHour = (endAbsMin ~/ 60) % 24;
         final endMin = endAbsMin % 60;
@@ -62,12 +77,15 @@ Future<void> showManualAddDialog({
 
         if (suggestions.isEmpty) {
           AppPersistence.loadTitleHistory(selectedColor).then((list) {
-            if (list.isNotEmpty) setDialogState(() => suggestions = list);
+            if (list.isNotEmpty) {
+              setDialogState(() => suggestions = list);
+            }
           });
         }
 
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: const Text('일정 추가',
               style: TextStyle(fontWeight: FontWeight.bold)),
           content: SingleChildScrollView(
@@ -84,7 +102,8 @@ Future<void> showManualAddDialog({
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                          color: showTitleError ? Colors.red : Colors.grey),
+                          color:
+                              showTitleError ? Colors.red : Colors.grey),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -134,7 +153,8 @@ Future<void> showManualAddDialog({
                             color: selectedColor.withValues(alpha: 0.18),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                                color: selectedColor.withValues(alpha: 0.5),
+                                color:
+                                    selectedColor.withValues(alpha: 0.5),
                                 width: 1),
                           ),
                           child: Row(
@@ -145,7 +165,8 @@ Future<void> showManualAddDialog({
                               const SizedBox(width: 4),
                               Text(s,
                                   style: const TextStyle(
-                                      fontSize: 12, color: Colors.black87)),
+                                      fontSize: 12,
+                                      color: Colors.black87)),
                             ],
                           ),
                         ),
@@ -161,7 +182,8 @@ Future<void> showManualAddDialog({
                     style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 6),
                 Row(
-                  children: List.generate(kUserPaletteColors.length, (ci) {
+                  children:
+                      List.generate(kUserPaletteColors.length, (ci) {
                     final c = kUserPaletteColors[ci];
                     final isSelected = selectedColor == c;
                     return GestureDetector(
@@ -174,7 +196,8 @@ Future<void> showManualAddDialog({
                           color: c,
                           shape: BoxShape.circle,
                           border: isSelected
-                              ? Border.all(color: Colors.black54, width: 2.5)
+                              ? Border.all(
+                                  color: Colors.black54, width: 2.5)
                               : Border.all(
                                   color: Colors.transparent, width: 2.5),
                         ),
@@ -197,10 +220,12 @@ Future<void> showManualAddDialog({
                     TextButton(
                       onPressed: () async {
                         final time = await showTimePicker(
-                            context: context, initialTime: selectedTime);
+                            context: context,
+                            initialTime: selectedTime);
                         if (time != null) {
                           setDialogState(() {
-                            selectedTime = roundToNearestSlot(time, slotMinutes);
+                            selectedTime = roundToNearestSlot(
+                                time, slotMinutes);
                             overlapError = null;
                           });
                         }
@@ -234,7 +259,8 @@ Future<void> showManualAddDialog({
                           child: Text(
                             overlapError!,
                             style: TextStyle(
-                                fontSize: 12, color: Colors.red.shade700),
+                                fontSize: 12,
+                                color: Colors.red.shade700),
                           ),
                         ),
                       ],
@@ -250,7 +276,8 @@ Future<void> showManualAddDialog({
                     const Text('소요 시간'),
                     Text(
                       '$endHour시 ${endMin.toString().padLeft(2, '0')}분 종료',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      style: const TextStyle(
+                          fontSize: 12, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -323,18 +350,16 @@ Future<void> showManualAddDialog({
                 }
                 if (duration <= 0) return;
 
-                final absSlot = minutesToAbsoluteSlot(
-                    selectedTime.hour, selectedTime.minute);
-                final durationSlots = (duration / slotMinutes).ceil();
+                final startMin =
+                    selectedTime.hour * 60 + selectedTime.minute;
 
-                final conflicts = overlapping(absSlot, durationSlots);
+                final conflicts = overlapping(startMin, duration);
                 if (conflicts.isNotEmpty) {
                   final latestEnd = conflicts
-                      .map((s) => s.startSlot + s.durationSlots)
+                      .map((s) => s.endMinute())
                       .reduce((a, b) => a > b ? a : b);
-                  final latestEndMin = latestEnd * slotMinutes;
-                  final eh = (latestEndMin ~/ 60) % 24;
-                  final em = latestEndMin % 60;
+                  final eh = (latestEnd ~/ 60) % 24;
+                  final em = latestEnd % 60;
                   final names =
                       conflicts.map((s) => '「${s.title}」').join(', ');
                   setDialogState(() {
@@ -346,7 +371,8 @@ Future<void> showManualAddDialog({
 
                 AppPersistence.recordTitle(selectedColor, title);
                 final updated = List<ScheduleItem>.from(schedules)
-                  ..add(ScheduleItem(title, absSlot, durationSlots, selectedColor));
+                  ..add(ScheduleItem(title, startMin, duration,
+                      selectedColor));
                 onSave(updated);
                 Navigator.pop(context);
               },
@@ -369,16 +395,15 @@ Future<void> showRuleSetApplyDialog({
   required Color ruleSetColor,
   required int slotMinutes,
   required int dayStartHour,
+  required int defaultStartHour,
   required List<ScheduleItem> schedules,
   required ValueChanged<List<ScheduleItem>> onSave,
 }) async {
-  TimeOfDay selectedTime = roundToNearestSlot(TimeOfDay.now(), slotMinutes);
+  // 기본 시작 시간: 마지막 종료 시각 (또는 설정값)
+  TimeOfDay selectedTime =
+      _defaultStartTime(schedules, defaultStartHour, slotMinutes);
   RoutineOption? selectedOption =
       ruleSet.options.isNotEmpty ? ruleSet.options.first : null;
-
-  int minutesToAbsoluteSlot(int hour, int minute) {
-    return (hour * 60 + minute) ~/ slotMinutes;
-  }
 
   await showDialog(
     context: context,
@@ -388,7 +413,8 @@ Future<void> showRuleSetApplyDialog({
         if (selectedOption != null) {
           final totalMin = selectedOption!.blocks
               .fold(0, (sum, b) => sum + b.durationMinutes);
-          final startMin = selectedTime.hour * 60 + selectedTime.minute;
+          final startMin =
+              selectedTime.hour * 60 + selectedTime.minute;
           final endMin = startMin + totalMin;
           final eh = (endMin ~/ 60) % 24;
           final em = endMin % 60;
@@ -396,7 +422,8 @@ Future<void> showRuleSetApplyDialog({
         }
 
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15)),
           title: Row(
             children: [
               CircleAvatar(backgroundColor: ruleSetColor, radius: 8),
@@ -411,15 +438,16 @@ Future<void> showRuleSetApplyDialog({
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('시작 시간',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 4),
                 InkWell(
                   onTap: () async {
                     final t = await showTimePicker(
                         context: ctx, initialTime: selectedTime);
                     if (t != null) {
-                      setDialogState(() =>
-                          selectedTime = roundToNearestSlot(t, slotMinutes));
+                      setDialogState(() => selectedTime =
+                          roundToNearestSlot(t, slotMinutes));
                     }
                   },
                   borderRadius: BorderRadius.circular(10),
@@ -431,7 +459,8 @@ Future<void> showRuleSetApplyDialog({
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           '${selectedTime.hour}시 ${selectedTime.minute.toString().padLeft(2, '0')}분',
@@ -440,7 +469,8 @@ Future<void> showRuleSetApplyDialog({
                               fontWeight: FontWeight.bold,
                               color: Colors.blue),
                         ),
-                        const Icon(Icons.edit, size: 16, color: Colors.blue),
+                        const Icon(Icons.edit,
+                            size: 16, color: Colors.blue),
                       ],
                     ),
                   ),
@@ -454,18 +484,21 @@ Future<void> showRuleSetApplyDialog({
                   ),
                 const SizedBox(height: 20),
                 const Text('옵션',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 8),
                 if (ruleSet.options.isEmpty)
                   const Text('등록된 옵션이 없습니다.',
-                      style: TextStyle(fontSize: 13, color: Colors.grey))
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey))
                 else
                   ...ruleSet.options.map((opt) {
                     final totalMin = opt.blocks
                         .fold(0, (sum, b) => sum + b.durationMinutes);
                     final isSelected = selectedOption == opt;
                     return GestureDetector(
-                      onTap: () => setDialogState(() => selectedOption = opt),
+                      onTap: () =>
+                          setDialogState(() => selectedOption = opt),
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.symmetric(
@@ -506,7 +539,8 @@ Future<void> showRuleSetApplyDialog({
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
                                   Text(opt.name,
                                       style: TextStyle(
@@ -530,25 +564,34 @@ Future<void> showRuleSetApplyDialog({
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('취소')),
             ElevatedButton(
               onPressed: selectedOption == null
                   ? null
                   : () {
-                      // 루틴 적용
-                      final updated = List<ScheduleItem>.from(schedules)
-                        ..removeWhere((s) => s.ruleSetName == ruleSet.name);
+                      final startMin = selectedTime.hour * 60 +
+                          selectedTime.minute;
 
-                      int relSlot = minutesToAbsoluteSlot(
-                          selectedTime.hour, selectedTime.minute);
+                      // singleUsePerDay: true → 같은 루틴 기존 항목 교체
+                      // false → 그냥 추가 (중복 허용)
+                      final updated =
+                          List<ScheduleItem>.from(schedules);
+                      if (ruleSet.singleUsePerDay) {
+                        updated.removeWhere(
+                            (s) => s.ruleSetName == ruleSet.name);
+                      }
+
+                      int curMin = startMin;
                       for (final block in selectedOption!.blocks) {
-                        final durationSlots =
-                            (block.durationMinutes / slotMinutes).ceil();
                         updated.add(ScheduleItem(
-                          block.title, relSlot, durationSlots, ruleSetColor,
+                          block.title,
+                          curMin,
+                          block.durationMinutes,
+                          ruleSetColor,
                           ruleSetName: ruleSet.name,
                         ));
-                        relSlot += durationSlots;
+                        curMin += block.durationMinutes;
                       }
                       onSave(updated);
                       Navigator.pop(ctx);
@@ -575,7 +618,8 @@ void showItemMenu({
   showModalBottomSheet(
     context: context,
     shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -597,24 +641,28 @@ void showItemMenu({
                 Container(
                   width: 12,
                   height: 12,
-                  decoration:
-                      BoxDecoration(color: item.color, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                      color: item.color, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(item.title,
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16)),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16)),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 4),
           ListTile(
-            leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: const Text('삭제', style: TextStyle(color: Colors.red)),
+            leading:
+                const Icon(Icons.delete_outline, color: Colors.red),
+            title:
+                const Text('삭제', style: TextStyle(color: Colors.red)),
             onTap: () {
-              final updated = List<ScheduleItem>.from(schedules)..remove(item);
+              final updated =
+                  List<ScheduleItem>.from(schedules)..remove(item);
               onSave(updated);
               Navigator.pop(ctx);
             },
@@ -634,5 +682,5 @@ void showItemMenu({
 List<int> _quickAddValues(int slotMinutes) {
   if (slotMinutes <= 10) return [10, 30, 60];
   if (slotMinutes == 15) return [15, 30, 60];
-  return [30, 60, 120]; // 30분 단위
+  return [30, 60, 120];
 }

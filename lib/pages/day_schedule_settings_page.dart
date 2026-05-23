@@ -2,40 +2,43 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../widgets/utils.dart';
 import '../widgets/mini_timeline.dart';
- 
+
 class DayScheduleSettingsPage extends StatefulWidget {
   final List<String> dayNames;
   final List<List<ScheduleItem>> daySchedules;
   final ValueChanged<List<List<ScheduleItem>>> onChanged;
   final int slotMinutes;
-  const DayScheduleSettingsPage(
-      {super.key,
-      required this.dayNames,
-      required this.daySchedules,
-      required this.onChanged,
-      this.slotMinutes = 10});
- 
+  const DayScheduleSettingsPage({
+    super.key,
+    required this.dayNames,
+    required this.daySchedules,
+    required this.onChanged,
+    this.slotMinutes = 10,
+  });
+
   @override
   State<DayScheduleSettingsPage> createState() =>
       _DayScheduleSettingsPageState();
 }
- 
-class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
+
+class _DayScheduleSettingsPageState
+    extends State<DayScheduleSettingsPage> {
   late List<List<ScheduleItem>> _schedules;
   int _selectedDay = 0;
- 
+
   @override
   void initState() {
     super.initState();
-    _schedules =
-        widget.daySchedules.map((list) => List<ScheduleItem>.from(list)).toList();
+    _schedules = widget.daySchedules
+        .map((list) => List<ScheduleItem>.from(list))
+        .toList();
   }
- 
+
   void _saveAndPop() {
     widget.onChanged(_schedules);
     Navigator.pop(context);
   }
- 
+
   void _addItem() async {
     final sm = widget.slotMinutes;
     TimeOfDay selectedTime = roundToNearestSlot(TimeOfDay.now(), sm);
@@ -48,14 +51,17 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final startSlot = (selectedTime.hour * 60 + selectedTime.minute) ~/ sm;
-          final endSlot = startSlot + (duration / sm).ceil();
-          final endHour = (endSlot * sm) ~/ 60;
-          final endMin = (endSlot * sm) % 60;
+          final startMin =
+              selectedTime.hour * 60 + selectedTime.minute;
+          final endMin = startMin + duration;
+          final endHour = (endMin ~/ 60) % 24;
+          final endMinute = endMin % 60;
 
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            title: Text('${widget.dayNames[_selectedDay]}요일 일정 추가'),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15)),
+            title:
+                Text('${widget.dayNames[_selectedDay]}요일 일정 추가'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -68,13 +74,17 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide(
-                          color: showTitleError ? Colors.red : Colors.grey,
+                          color: showTitleError
+                              ? Colors.red
+                              : Colors.grey,
                         ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide(
-                          color: showTitleError ? Colors.red : Colors.grey.shade300,
+                          color: showTitleError
+                              ? Colors.red
+                              : Colors.grey.shade300,
                         ),
                       ),
                     ),
@@ -82,7 +92,9 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                     keyboardType: TextInputType.multiline,
                     textInputAction: TextInputAction.newline,
                     onChanged: (_) {
-                      if (showTitleError) setDialogState(() => showTitleError = false);
+                      if (showTitleError) {
+                        setDialogState(() => showTitleError = false);
+                      }
                     },
                   ),
                   if (showTitleError)
@@ -90,18 +102,23 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                       padding: const EdgeInsets.only(top: 4, left: 4),
                       child: Text(
                         '제목을 입력해 주세요.',
-                        style: TextStyle(fontSize: 11, color: Colors.red.shade400),
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.red.shade400),
                       ),
                     ),
                   const SizedBox(height: 14),
-                  const Text('색상', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const Text('색상',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey)),
                   const SizedBox(height: 6),
                   Row(
-                    children: List.generate(kUserPaletteColors.length, (ci) {
+                    children: List.generate(
+                        kUserPaletteColors.length, (ci) {
                       final c = kUserPaletteColors[ci];
                       final isSelected = selectedColor == c;
                       return GestureDetector(
-                        onTap: () => setDialogState(() => selectedColor = c),
+                        onTap: () =>
+                            setDialogState(() => selectedColor = c),
                         child: Container(
                           width: 28,
                           height: 28,
@@ -110,11 +127,15 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                             color: c,
                             shape: BoxShape.circle,
                             border: isSelected
-                                ? Border.all(color: Colors.black54, width: 2.5)
-                                : Border.all(color: Colors.transparent, width: 2.5),
+                                ? Border.all(
+                                    color: Colors.black54, width: 2.5)
+                                : Border.all(
+                                    color: Colors.transparent,
+                                    width: 2.5),
                           ),
                           child: isSelected
-                              ? const Icon(Icons.check, size: 14, color: Colors.black54)
+                              ? const Icon(Icons.check,
+                                  size: 14, color: Colors.black54)
                               : null,
                         ),
                       );
@@ -122,15 +143,18 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                   ),
                   const SizedBox(height: 14),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('시작 시간'),
                       TextButton(
                         onPressed: () async {
                           final t = await showTimePicker(
-                              context: ctx, initialTime: selectedTime);
+                              context: ctx,
+                              initialTime: selectedTime);
                           if (t != null) {
-                            setDialogState(() => selectedTime = roundToNearestSlot(t, sm));
+                            setDialogState(() => selectedTime =
+                                roundToNearestSlot(t, sm));
                           }
                         },
                         child: Text(
@@ -140,11 +164,14 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                   ),
                   const Divider(),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('소요 시간'),
-                      Text('$endHour시 ${endMin.toString().padLeft(2, '0')}분 종료',
-                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(
+                          '$endHour시 ${endMinute.toString().padLeft(2, '0')}분 종료',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                   Row(
@@ -152,7 +179,9 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                     children: [
                       IconButton(
                         onPressed: () {
-                          if (duration > sm) setDialogState(() => duration -= sm);
+                          if (duration > sm) {
+                            setDialogState(() => duration -= sm);
+                          }
                         },
                         icon: const Icon(Icons.remove_circle_outline),
                       ),
@@ -167,23 +196,27 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                         ),
                       ),
                       IconButton(
-                        onPressed: () => setDialogState(() => duration += sm),
+                        onPressed: () =>
+                            setDialogState(() => duration += sm),
                         icon: const Icon(Icons.add_circle_outline),
                       ),
                     ],
                   ),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceEvenly,
                     children: _quickAddValues(sm).map((val) {
                       return OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           shape: const StadiumBorder(),
                           side: const BorderSide(color: Colors.blue),
                         ),
-                        onPressed: () => setDialogState(() => duration += val),
-                        child: Text('+$val분', style: const TextStyle(fontSize: 12)),
+                        onPressed: () =>
+                            setDialogState(() => duration += val),
+                        child: Text('+$val분',
+                            style: const TextStyle(fontSize: 12)),
                       );
                     }).toList(),
                   ),
@@ -192,7 +225,8 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
             ),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('취소')),
               ElevatedButton(
                 onPressed: () {
                   if (titleController.text.trim().isEmpty) {
@@ -212,18 +246,18 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
     final title = titleController.text.trim();
     if (title.isNotEmpty && duration > 0) {
       setState(() {
-        final startSlot = (selectedTime.hour * 60 + selectedTime.minute) ~/ sm;
-        final durationSlots = (duration / sm).ceil();
+        final startMin =
+            selectedTime.hour * 60 + selectedTime.minute;
         _schedules[_selectedDay]
-            .add(ScheduleItem(title, startSlot, durationSlots, selectedColor));
+            .add(ScheduleItem(title, startMin, duration, selectedColor));
       });
     }
   }
- 
+
   @override
   Widget build(BuildContext context) {
     final items = _schedules[_selectedDay];
- 
+
     return WillPopScope(
       onWillPop: () async {
         _saveAndPop();
@@ -242,21 +276,27 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 itemCount: 7,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 6),
                 itemBuilder: (ctx, i) => GestureDetector(
-                  onTap: () => setState(() => _selectedDay = i),
+                  onTap: () =>
+                      setState(() => _selectedDay = i),
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 4),
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     decoration: BoxDecoration(
-                      color: _selectedDay == i ? Colors.blue : Colors.grey.shade100,
+                      color: _selectedDay == i
+                          ? Colors.blue
+                          : Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     alignment: Alignment.center,
                     child: Text(
                       '${widget.dayNames[i]}요일',
                       style: TextStyle(
-                        color: _selectedDay == i ? Colors.white : Colors.black87,
+                        color: _selectedDay == i
+                            ? Colors.white
+                            : Colors.black87,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -270,7 +310,8 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                   ? Center(
                       child: Text(
                         '${widget.dayNames[_selectedDay]}요일 일정이 없습니다.',
-                        style: const TextStyle(color: Colors.grey),
+                        style:
+                            const TextStyle(color: Colors.grey),
                       ),
                     )
                   : SingleChildScrollView(
@@ -278,25 +319,31 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                            padding: const EdgeInsets.fromLTRB(
+                                8, 12, 8, 4),
                             child: Container(
                               decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade200),
-                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                    color: Colors.grey.shade200),
+                                borderRadius:
+                                    BorderRadius.circular(8),
                               ),
                               padding: const EdgeInsets.all(4),
-                              child: MiniTimeline(items: items),
+                              child: MiniTimeline(
+                                  items: items,
+                                  slotMinutes:
+                                      widget.slotMinutes),
                             ),
                           ),
                           const Divider(height: 24),
                           ...items.asMap().entries.map((e) {
                             final i = e.key;
                             final item = e.value;
-                            final startHour = item.startSlot ~/ 6;
-                            final startMin = (item.startSlot % 6) * 10;
-                            final endSlot = item.startSlot + item.durationSlots;
-                            final endHour = endSlot ~/ 6;
-                            final endMin = (endSlot % 6) * 10;
+                            final startH = item.startMinute ~/ 60;
+                            final startM = item.startMinute % 60;
+                            final endM = item.endMinute();
+                            final endH = endM ~/ 60;
+                            final endMin = endM % 60;
                             return ListTile(
                               leading: Container(
                                 width: 12,
@@ -304,19 +351,23 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
                                 decoration: BoxDecoration(
                                   color: item.color,
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.teal),
+                                  border: Border.all(
+                                      color: Colors.teal),
                                 ),
                               ),
                               title: Text(item.title),
                               subtitle: Text(
-                                '$startHour시 ${startMin.toString().padLeft(2, '0')}분 ~ '
-                                '$endHour시 ${endMin.toString().padLeft(2, '0')}분',
+                                '$startH시 ${startM.toString().padLeft(2, '0')}분 ~ '
+                                '$endH시 ${endMin.toString().padLeft(2, '0')}분',
                               ),
                               trailing: IconButton(
-                                icon: const Icon(Icons.delete_outline,
-                                    color: Colors.red, size: 20),
-                                onPressed: () => setState(
-                                    () => _schedules[_selectedDay].removeAt(i)),
+                                icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red,
+                                    size: 20),
+                                onPressed: () => setState(() =>
+                                    _schedules[_selectedDay]
+                                        .removeAt(i)),
                               ),
                             );
                           }),
@@ -335,9 +386,10 @@ class _DayScheduleSettingsPageState extends State<DayScheduleSettingsPage> {
     );
   }
 }
+
 /// slotMinutes에 따른 빠른 추가 버튼 값 목록
 List<int> _quickAddValues(int slotMinutes) {
   if (slotMinutes <= 10) return [10, 30, 60];
   if (slotMinutes == 15) return [15, 30, 60];
-  return [30, 60, 120]; // 30분 단위
+  return [30, 60, 120];
 }

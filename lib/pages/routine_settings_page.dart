@@ -8,7 +8,10 @@ class ConditionalRuleSettingsPage extends StatefulWidget {
   final ValueChanged<List<ConditionalRuleSet>> onChanged;
   final int slotMinutes;
   const ConditionalRuleSettingsPage(
-      {super.key, required this.ruleSets, required this.onChanged, this.slotMinutes = 10});
+      {super.key,
+      required this.ruleSets,
+      required this.onChanged,
+      this.slotMinutes = 10});
 
   @override
   State<ConditionalRuleSettingsPage> createState() =>
@@ -26,6 +29,7 @@ class _ConditionalRuleSettingsPageState
         .map((rs) => ConditionalRuleSet(
               name: rs.name,
               color: rs.color,
+              singleUsePerDay: rs.singleUsePerDay,
               options: rs.options
                   .map((o) => RoutineOption(
                         name: o.name,
@@ -50,23 +54,22 @@ class _ConditionalRuleSettingsPageState
     return _ruleSets[setIdx].color ?? ruleSetColor(setIdx);
   }
 
-  // 미리보기: 시작시간 없으므로 0시 기준으로 상대 슬롯
   List<ScheduleItem> _previewItems(int setIdx, RoutineOption option) {
     final sm = widget.slotMinutes;
     final color = _colorForSet(setIdx);
-    int startSlot = 0;
+    int startMinute = 0;
     final items = <ScheduleItem>[];
     for (final block in option.blocks) {
       final dSlots = (block.durationMinutes / sm).ceil();
-      items.add(ScheduleItem(block.title, startSlot, dSlots, color));
-      startSlot += dSlots;
+      items.add(ScheduleItem(block.title, startMinute, block.durationMinutes, color));
+      startMinute += block.durationMinutes;
     }
     return items;
   }
 
-  // 총 소요 시간 표시
   String _totalDuration(RoutineOption option) {
-    final total = option.blocks.fold(0, (sum, b) => sum + b.durationMinutes);
+    final total =
+        option.blocks.fold(0, (sum, b) => sum + b.durationMinutes);
     final h = total ~/ 60;
     final m = total % 60;
     if (h > 0 && m > 0) return '$h시간 $m분';
@@ -74,14 +77,18 @@ class _ConditionalRuleSettingsPageState
     return '$m분';
   }
 
-  void _editRuleSetName(int setIdx) async {
-    final controller = TextEditingController(text: _ruleSets[setIdx].name);
+  void _editRuleSet(int setIdx) async {
+    final controller =
+        TextEditingController(text: _ruleSets[setIdx].name);
     Color selectedColor = _colorForSet(setIdx);
+    bool singleUse = _ruleSets[setIdx].singleUsePerDay;
+
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15)),
           title: const Text('루틴 수정'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -90,17 +97,22 @@ class _ConditionalRuleSettingsPageState
               TextField(
                 controller: controller,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: '루틴 이름'),
+                decoration:
+                    const InputDecoration(hintText: '루틴 이름'),
               ),
               const SizedBox(height: 16),
-              const Text('색상', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const Text('색상',
+                  style:
+                      TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 8),
               Row(
-                children: List.generate(kUserPaletteColors.length, (ci) {
+                children: List.generate(
+                    kUserPaletteColors.length, (ci) {
                   final c = kUserPaletteColors[ci];
                   final isSelected = selectedColor == c;
                   return GestureDetector(
-                    onTap: () => setDialogState(() => selectedColor = c),
+                    onTap: () =>
+                        setDialogState(() => selectedColor = c),
                     child: Container(
                       width: 30,
                       height: 30,
@@ -109,20 +121,56 @@ class _ConditionalRuleSettingsPageState
                         color: c,
                         shape: BoxShape.circle,
                         border: isSelected
-                            ? Border.all(color: Colors.black54, width: 2.5)
-                            : Border.all(color: Colors.transparent, width: 2.5),
+                            ? Border.all(
+                                color: Colors.black54, width: 2.5)
+                            : Border.all(
+                                color: Colors.transparent,
+                                width: 2.5),
                       ),
                       child: isSelected
-                          ? const Icon(Icons.check, size: 14, color: Colors.black54)
+                          ? const Icon(Icons.check,
+                              size: 14, color: Colors.black54)
                           : null,
                     ),
                   );
                 }),
               ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('하루 한 번만 적용',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w500)),
+                        const SizedBox(height: 2),
+                        Text(
+                          singleUse
+                              ? '재적용 시 기존 블록을 교체합니다.'
+                              : '하루에 여러 번 적용할 수 있습니다.',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: singleUse,
+                    onChanged: (v) =>
+                        setDialogState(() => singleUse = v),
+                  ),
+                ],
+              ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('취소')),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('저장'),
@@ -138,6 +186,7 @@ class _ConditionalRuleSettingsPageState
           name: newName,
           options: _ruleSets[setIdx].options,
           color: selectedColor,
+          singleUsePerDay: singleUse,
         );
       });
     }
@@ -146,6 +195,8 @@ class _ConditionalRuleSettingsPageState
   void _addRuleSet() async {
     String name = '';
     Color selectedColor = kUserPaletteColors[0];
+    bool singleUse = false;
+
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -157,18 +208,23 @@ class _ConditionalRuleSettingsPageState
             children: [
               TextField(
                 autofocus: true,
-                decoration: const InputDecoration(hintText: '예: 저녁 루틴'),
+                decoration:
+                    const InputDecoration(hintText: '예: 저녁 루틴'),
                 onChanged: (v) => name = v,
               ),
               const SizedBox(height: 16),
-              const Text('색상', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const Text('색상',
+                  style:
+                      TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 8),
               Row(
-                children: List.generate(kUserPaletteColors.length, (ci) {
+                children: List.generate(
+                    kUserPaletteColors.length, (ci) {
                   final c = kUserPaletteColors[ci];
                   final isSelected = selectedColor == c;
                   return GestureDetector(
-                    onTap: () => setDialogState(() => selectedColor = c),
+                    onTap: () =>
+                        setDialogState(() => selectedColor = c),
                     child: Container(
                       width: 30,
                       height: 30,
@@ -177,20 +233,56 @@ class _ConditionalRuleSettingsPageState
                         color: c,
                         shape: BoxShape.circle,
                         border: isSelected
-                            ? Border.all(color: Colors.black54, width: 2.5)
-                            : Border.all(color: Colors.transparent, width: 2.5),
+                            ? Border.all(
+                                color: Colors.black54, width: 2.5)
+                            : Border.all(
+                                color: Colors.transparent,
+                                width: 2.5),
                       ),
                       child: isSelected
-                          ? const Icon(Icons.check, size: 14, color: Colors.black54)
+                          ? const Icon(Icons.check,
+                              size: 14, color: Colors.black54)
                           : null,
                     ),
                   );
                 }),
               ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('하루 한 번만 적용',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w500)),
+                        const SizedBox(height: 2),
+                        Text(
+                          singleUse
+                              ? '재적용 시 기존 블록을 교체합니다.'
+                              : '하루에 여러 번 적용할 수 있습니다.',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: singleUse,
+                    onChanged: (v) =>
+                        setDialogState(() => singleUse = v),
+                  ),
+                ],
+              ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('취소')),
             ElevatedButton(
               onPressed: () {
                 if (name.isNotEmpty) Navigator.pop(ctx);
@@ -203,17 +295,22 @@ class _ConditionalRuleSettingsPageState
     );
     if (name.isNotEmpty) {
       setState(() => _ruleSets.add(
-            ConditionalRuleSet(name: name, options: [], color: selectedColor),
+            ConditionalRuleSet(
+                name: name,
+                options: [],
+                color: selectedColor,
+                singleUsePerDay: singleUse),
           ));
     }
   }
 
-  // 옵션 추가/수정: 이름 + 소요시간만 (시작시간 없음)
   void _showOptionDialog(int setIdx, {int? editOptionIdx}) async {
     final isEdit = editOptionIdx != null;
-    final existing = isEdit ? _ruleSets[setIdx].options[editOptionIdx] : null;
+    final existing =
+        isEdit ? _ruleSets[setIdx].options[editOptionIdx] : null;
 
-    final nameController = TextEditingController(text: existing?.name ?? '');
+    final nameController =
+        TextEditingController(text: existing?.name ?? '');
     final blockTitleController = TextEditingController(
         text: existing?.blocks.isNotEmpty == true
             ? existing!.blocks.first.title
@@ -229,33 +326,40 @@ class _ConditionalRuleSettingsPageState
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final dSlots = (blockDuration / sm).ceil();
           final previewItem = ScheduleItem(
-            blockTitleController.text.isEmpty ? '(미리보기)' : blockTitleController.text,
+            blockTitleController.text.isEmpty
+                ? '(미리보기)'
+                : blockTitleController.text,
             0,
-            dSlots,
+            blockDuration,
             previewColor,
           );
 
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15)),
             title: Text(isEdit ? '옵션 수정' : '옵션 추가'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('옵션 이름', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const Text('옵션 이름',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey)),
                   TextField(
                     controller: nameController,
-                    decoration: const InputDecoration(hintText: '예: 기본, 짧게, 길게'),
+                    decoration: const InputDecoration(
+                        hintText: '예: 기본, 짧게, 길게'),
                   ),
                   const SizedBox(height: 16),
                   const Text('스케줄 블록 제목',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey)),
                   TextField(
                     controller: blockTitleController,
-                    decoration: const InputDecoration(hintText: '예: 저녁 루틴 A'),
+                    decoration: const InputDecoration(
+                        hintText: '예: 저녁 루틴 A'),
                     maxLines: null,
                     keyboardType: TextInputType.multiline,
                     textInputAction: TextInputAction.newline,
@@ -263,10 +367,12 @@ class _ConditionalRuleSettingsPageState
                   ),
                   const SizedBox(height: 12),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('소요 시간',
-                          style: TextStyle(fontWeight: FontWeight.w500)),
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500)),
                       Text('$blockDuration분',
                           style: const TextStyle(
                               fontSize: 16,
@@ -280,48 +386,62 @@ class _ConditionalRuleSettingsPageState
                     children: [
                       IconButton(
                         onPressed: () {
-                          if (blockDuration > sm)
-                            setDialogState(() => blockDuration -= sm);
+                          if (blockDuration > sm) {
+                            setDialogState(
+                                () => blockDuration -= sm);
+                          }
                         },
-                        icon: const Icon(Icons.remove_circle_outline),
+                        icon:
+                            const Icon(Icons.remove_circle_outline),
                       ),
                       Expanded(
                         child: Slider(
-                          value: blockDuration.toDouble().clamp(10, 180),
+                          value: blockDuration
+                              .toDouble()
+                              .clamp(10, 180),
                           min: 10,
                           max: 180,
                           divisions: 17,
                           label: '$blockDuration분',
-                          onChanged: (v) =>
-                              setDialogState(() => blockDuration = (v ~/ sm) * sm),
+                          onChanged: (v) => setDialogState(
+                              () => blockDuration =
+                                  (v ~/ sm) * sm),
                         ),
                       ),
                       IconButton(
-                        onPressed: () => setDialogState(() => blockDuration += sm),
+                        onPressed: () => setDialogState(
+                            () => blockDuration += sm),
                         icon: const Icon(Icons.add_circle_outline),
                       ),
                     ],
                   ),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceEvenly,
                     children: _quickAddValues(sm).map((val) {
                       return OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           shape: const StadiumBorder(),
                           side: const BorderSide(color: Colors.blue),
                         ),
-                        onPressed: () => setDialogState(() => blockDuration += val),
-                        child: Text('+$val분', style: const TextStyle(fontSize: 12)),
+                        onPressed: () => setDialogState(
+                            () => blockDuration += val),
+                        child: Text('+$val분',
+                            style: const TextStyle(fontSize: 12)),
                       );
                     }).toList(),
                   ),
                   const SizedBox(height: 12),
-                  const Text('미리보기', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const Text('미리보기',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey)),
                   const SizedBox(height: 4),
                   Container(
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade200),
+                      border:
+                          Border.all(color: Colors.grey.shade200),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     padding: const EdgeInsets.all(4),
@@ -331,7 +451,9 @@ class _ConditionalRuleSettingsPageState
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('취소')),
               ElevatedButton(
                 onPressed: () {
                   if (nameController.text.trim().isNotEmpty &&
@@ -352,7 +474,10 @@ class _ConditionalRuleSettingsPageState
     if (optionName.isNotEmpty && blockTitle.isNotEmpty) {
       final newOption = RoutineOption(
         name: optionName,
-        blocks: [ScheduleBlock(title: blockTitle, durationMinutes: blockDuration)],
+        blocks: [
+          ScheduleBlock(
+              title: blockTitle, durationMinutes: blockDuration)
+        ],
       );
       setState(() {
         if (isEdit) {
@@ -387,7 +512,8 @@ class _ConditionalRuleSettingsPageState
                   final ruleSet = _ruleSets[setIdx];
                   final setColor = _colorForSet(setIdx);
                   return Card(
-                    margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    margin:
+                        const EdgeInsets.fromLTRB(12, 12, 12, 0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -397,22 +523,76 @@ class _ConditionalRuleSettingsPageState
                             backgroundColor: setColor,
                             radius: 12,
                           ),
-                          title: Text(ruleSet.name,
-                              style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('옵션 ${ruleSet.options.length}개',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          title: Row(
+                            children: [
+                              Text(ruleSet.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 6),
+                              if (ruleSet.singleUsePerDay)
+                                Container(
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius:
+                                        BorderRadius.circular(8),
+                                    border: Border.all(
+                                        color: Colors.blue.shade200),
+                                  ),
+                                  child: const Text(
+                                    '하루 1회',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.blue),
+                                  ),
+                                )
+                              else
+                                Container(
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    borderRadius:
+                                        BorderRadius.circular(8),
+                                    border: Border.all(
+                                        color:
+                                            Colors.green.shade200),
+                                  ),
+                                  child: const Text(
+                                    '중복 허용',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.green),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          subtitle: Text(
+                              '옵션 ${ruleSet.options.length}개',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey)),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
+                                icon: const Icon(Icons.edit,
+                                    size: 20, color: Colors.blue),
                                 tooltip: '루틴 수정',
-                                onPressed: () => _editRuleSetName(setIdx),
+                                onPressed: () =>
+                                    _editRuleSet(setIdx),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                onPressed: () =>
-                                    setState(() => _ruleSets.removeAt(setIdx)),
+                                icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red),
+                                onPressed: () => setState(() =>
+                                    _ruleSets.removeAt(setIdx)),
                               ),
                             ],
                           ),
@@ -422,14 +602,18 @@ class _ConditionalRuleSettingsPageState
                         ...ruleSet.options.asMap().entries.map((e) {
                           final optIdx = e.key;
                           final option = e.value;
-                          final previewItems = _previewItems(setIdx, option);
+                          final previewItems =
+                              _previewItems(setIdx, option);
                           return ExpansionTile(
                             leading: CircleAvatar(
                               radius: 14,
-                              backgroundColor: setColor.withValues(alpha: 0.6),
+                              backgroundColor:
+                                  setColor.withValues(alpha: 0.6),
                               child: Text(
                                 (optIdx + 1).toString(),
-                                style: const TextStyle(fontSize: 11, color: Colors.black87,
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black87,
                                     fontWeight: FontWeight.bold),
                               ),
                             ),
@@ -446,32 +630,43 @@ class _ConditionalRuleSettingsPageState
                                   icon: const Icon(Icons.edit,
                                       size: 18, color: Colors.blue),
                                   tooltip: '옵션 수정',
-                                  onPressed: () =>
-                                      _showOptionDialog(setIdx, editOptionIdx: optIdx),
+                                  onPressed: () => _showOptionDialog(
+                                      setIdx,
+                                      editOptionIdx: optIdx),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.close, size: 18),
-                                  onPressed: () =>
-                                      setState(() => ruleSet.options.removeAt(optIdx)),
+                                  icon: const Icon(Icons.close,
+                                      size: 18),
+                                  onPressed: () => setState(() =>
+                                      ruleSet.options
+                                          .removeAt(optIdx)),
                                 ),
                               ],
                             ),
                             children: [
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                                padding: const EdgeInsets.fromLTRB(
+                                    16, 0, 16, 12),
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                   children: [
                                     const Text('미리보기',
-                                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey)),
                                     const SizedBox(height: 4),
                                     Container(
                                       decoration: BoxDecoration(
-                                        border: Border.all(color: Colors.grey.shade200),
-                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                            color:
+                                                Colors.grey.shade200),
+                                        borderRadius:
+                                            BorderRadius.circular(8),
                                       ),
                                       padding: const EdgeInsets.all(4),
-                                      child: MiniTimeline(items: previewItems),
+                                      child: MiniTimeline(
+                                          items: previewItems),
                                     ),
                                   ],
                                 ),
@@ -480,7 +675,8 @@ class _ConditionalRuleSettingsPageState
                           );
                         }),
                         TextButton.icon(
-                          onPressed: () => _showOptionDialog(setIdx),
+                          onPressed: () =>
+                              _showOptionDialog(setIdx),
                           icon: const Icon(Icons.add),
                           label: const Text('옵션 추가'),
                         ),
@@ -498,9 +694,10 @@ class _ConditionalRuleSettingsPageState
     );
   }
 }
+
 /// slotMinutes에 따른 빠른 추가 버튼 값 목록
 List<int> _quickAddValues(int slotMinutes) {
   if (slotMinutes <= 10) return [10, 30, 60];
   if (slotMinutes == 15) return [15, 30, 60];
-  return [30, 60, 120]; // 30분 단위
+  return [30, 60, 120];
 }
