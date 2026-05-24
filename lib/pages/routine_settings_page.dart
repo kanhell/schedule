@@ -105,32 +105,47 @@ class _ConditionalRuleSettingsPageState
                   style:
                       TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: List.generate(
                     kUserPaletteColors.length, (ci) {
                   final c = kUserPaletteColors[ci];
+                  final label = kUserPaletteLabels[ci];
                   final isSelected = selectedColor == c;
                   return GestureDetector(
                     onTap: () =>
                         setDialogState(() => selectedColor = c),
                     child: Container(
-                      width: 30,
-                      height: 30,
-                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: c,
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(20),
                         border: isSelected
                             ? Border.all(
-                                color: Colors.black54, width: 2.5)
+                                color: Colors.black54, width: 2)
                             : Border.all(
                                 color: Colors.transparent,
-                                width: 2.5),
+                                width: 2),
                       ),
-                      child: isSelected
-                          ? const Icon(Icons.check,
-                              size: 14, color: Colors.black54)
-                          : null,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isSelected) ...[
+                            const Icon(Icons.check,
+                                size: 13, color: Colors.black54),
+                            const SizedBox(width: 4),
+                          ],
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }),
@@ -217,32 +232,47 @@ class _ConditionalRuleSettingsPageState
                   style:
                       TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: List.generate(
                     kUserPaletteColors.length, (ci) {
                   final c = kUserPaletteColors[ci];
+                  final label = kUserPaletteLabels[ci];
                   final isSelected = selectedColor == c;
                   return GestureDetector(
                     onTap: () =>
                         setDialogState(() => selectedColor = c),
                     child: Container(
-                      width: 30,
-                      height: 30,
-                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: c,
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(20),
                         border: isSelected
                             ? Border.all(
-                                color: Colors.black54, width: 2.5)
+                                color: Colors.black54, width: 2)
                             : Border.all(
                                 color: Colors.transparent,
-                                width: 2.5),
+                                width: 2),
                       ),
-                      child: isSelected
-                          ? const Icon(Icons.check,
-                              size: 14, color: Colors.black54)
-                          : null,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isSelected) ...[
+                            const Icon(Icons.check,
+                                size: 13, color: Colors.black54),
+                            const SizedBox(width: 4),
+                          ],
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }),

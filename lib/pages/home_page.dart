@@ -466,16 +466,31 @@ class _HomePageState extends State<HomePage> {
     final totalSlots = _totalSlots;
     final totalHeight = totalSlots * slotHeight;
 
-    return SingleChildScrollView(
-      controller: _scrollController,
-      child: SizedBox(
-        height: totalHeight,
-        child: Stack(
-          children: [
-            _buildGrid(totalSlots),
-            ..._buildScheduleBlocks(),
-            if (_isToday) _buildCurrentTimeLine(totalSlots),
-          ],
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        // 수평 스와이프로 날짜 이동
+        // 오른쪽으로 스와이프 → 이전 날, 왼쪽으로 스와이프 → 다음 날
+        if (details.primaryVelocity == null) return;
+        if (details.primaryVelocity!.abs() < 200) return; // 너무 느린 스와이프 무시
+        if (details.primaryVelocity! > 0) {
+          widget.onDateChanged(
+              widget.selectedDate.subtract(const Duration(days: 1)));
+        } else {
+          widget.onDateChanged(
+              widget.selectedDate.add(const Duration(days: 1)));
+        }
+      },
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        child: SizedBox(
+          height: totalHeight,
+          child: Stack(
+            children: [
+              _buildGrid(totalSlots),
+              ..._buildScheduleBlocks(),
+              if (_isToday) _buildCurrentTimeLine(totalSlots),
+            ],
+          ),
         ),
       ),
     );

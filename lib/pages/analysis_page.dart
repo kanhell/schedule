@@ -788,9 +788,19 @@ class _AnalysisPageState extends State<AnalysisPage> {
     final minutesByColor = _calcMinutesByColor();
     final totalMinutes = minutesByColor.values.fold(0, (a, b) => a + b);
 
-    // 기타설정 기준 하루 전체 시간(분)
-    final dayTotalMinutes =
-        (widget.timeSettings.dayEndHour - widget.timeSettings.dayStartHour) * 60;
+    // 오늘 시간분포 분모: 첫 일정 ~ 마지막 일정 끝 시각 (일정 없으면 0)
+    int dayTotalMinutes;
+    if (widget.schedules.isEmpty) {
+      dayTotalMinutes = 0;
+    } else {
+      final firstStart = widget.schedules
+          .map((s) => s.startMinute)
+          .reduce((a, b) => a < b ? a : b);
+      final lastEnd = widget.schedules
+          .map((s) => s.startMinute + s.durationMinutes)
+          .reduce((a, b) => a > b ? a : b);
+      dayTotalMinutes = lastEnd - firstStart;
+    }
     final unallocatedMinutes = (dayTotalMinutes - totalMinutes).clamp(0, dayTotalMinutes);
 
     final entries = widget.colorLabels.map((label) {
@@ -898,17 +908,29 @@ class _AnalysisPageState extends State<AnalysisPage> {
       builder: (context, setPageState) {
         return Column(
           children: [
-            SizedBox(
-              height: 420,
-              child: PageView(
-                controller: pageController,
-                onPageChanged: (i) => pageNotifier.value = i,
-                children: [
-                  _buildDonutCard(donutEntries, usedEntries, totalMinutes,
-                      dayTotalMinutes, unallocatedMinutes, title: '오늘 시간 분포'),
-                  _buildWeeklyDonutCard(weeklyUsedEntries, weeklyTotal),
-                ],
-              ),
+            ValueListenableBuilder<int>(
+              valueListenable: pageNotifier,
+              builder: (_, page, _) {
+                return GestureDetector(
+                  onHorizontalDragEnd: (details) {
+                    if (details.primaryVelocity == null) return;
+                    if (details.primaryVelocity!.abs() < 200) return;
+                    if (details.primaryVelocity! < 0 && page == 0) {
+                      pageNotifier.value = 1;
+                    } else if (details.primaryVelocity! > 0 && page == 1) {
+                      pageNotifier.value = 0;
+                    }
+                  },
+                  child: IndexedStack(
+                    index: page,
+                    children: [
+                      _buildDonutCard(donutEntries, usedEntries, totalMinutes,
+                          dayTotalMinutes, unallocatedMinutes, title: '오늘 시간 분포'),
+                      _buildWeeklyDonutCard(weeklyUsedEntries, weeklyTotal),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 8),
             ValueListenableBuilder<int>(
@@ -946,11 +968,17 @@ class _AnalysisPageState extends State<AnalysisPage> {
       );
     }
 
+    const weekdayLabels = ['월', '화', '수', '목', '금', '토', '일'];
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final weekStart = todayOnly.subtract(const Duration(days: 6));
-    final dateLabel =
-        '${weekStart.month}/${weekStart.day} ~ ${todayOnly.month}/${todayOnly.day}';
+
+    String dayLabel(DateTime d) {
+      final wd = weekdayLabels[d.weekday - 1];
+      return '${d.month}/${d.day}($wd)';
+    }
+
+    final dateLabel = '${dayLabel(weekStart)} ~ ${dayLabel(todayOnly)}';
 
     return Card(
       elevation: 0,
@@ -1315,9 +1343,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    isAtLeast
-                        ? '${_formatMinutes(actual)} / ${_formatMinutes(goal.targetMinutes)}'
-                        : '현재 ${_formatMinutes(actual)}  목표 ${_formatMinutes(goal.targetMinutes)} 미만',
+                    '${_formatMinutes(actual)} / ${_formatMinutes(goal.targetMinutes)}${isAtLeast ? '' : ' 미만'}',
                     style: TextStyle(
                         fontSize: 12,
                         color: achieved ? typeColor : Colors.black54,
@@ -1516,9 +1542,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  isAtLeast
-                      ? '${_formatMinutes(actual)} / ${_formatMinutes(sub.targetMinutes)}'
-                      : '현재 ${_formatMinutes(actual)}  목표 ${_formatMinutes(sub.targetMinutes)} 미만',
+                  '${_formatMinutes(actual)} / ${_formatMinutes(sub.targetMinutes)}${isAtLeast ? '' : ' 미만'}',
                   style: TextStyle(
                       fontSize: 11,
                       color: achieved ? typeColor : Colors.black54,
